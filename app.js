@@ -898,7 +898,7 @@ function showStructuredStep() {
   if (!step) {
     // se acabou, encerra bonito
     safeRegister();
-    return showEndScreen("Trilha encerrada", "Obrigado por escrever com a IZA.");
+    return showEndScreenWithHistory("Trilha encerrada", "Obrigado por escrever com a IZA.");
   }
 
   showPromptInput({
@@ -1038,4 +1038,60 @@ function showEndScreen(title, message) {
 }
 
 // init
+function buildPrettyHistoryText() {
+  const lines = [];
+  lines.push("IZA no Cordel 2.0 — Percurso de escrita");
+  lines.push("----------------------------------------");
+  lines.push(`Nome: ${state.name}`);
+  lines.push(`Email: ${state.email}`);
+  lines.push(`Presença: ${state.presence?.name || ""}`);
+  lines.push(`Trilha: ${state.trackKey || ""}`);
+  lines.push("");
+
+  state.turns.forEach((t, i) => {
+    const who = (t.role === "iza") ? "IZA" : "Você";
+    lines.push(`${i + 1}. ${who}:`);
+    lines.push((t.text || "").trim() || "[vazio]");
+    lines.push("");
+  });
+
+  const userTexts = state.turns
+    .filter(x => x.role === "user")
+    .map(x => (x.text || "").trim())
+    .filter(Boolean);
+
+  if (userTexts.length) {
+    lines.push("Resumo:");
+    lines.push(`- Primeira escrita: ${userTexts[0].slice(0, 260)}${userTexts[0].length > 260 ? "…" : ""}`);
+    lines.push(`- Última versão: ${userTexts[userTexts.length - 1].slice(0, 260)}${userTexts[userTexts.length - 1].length > 260 ? "…" : ""}`);
+  }
+
+  return lines.join("\n");
+}
+
+function showEndScreenWithHistory(title, message) {
+  const history = buildPrettyHistoryText();
+  const d = card(`
+    <h2>${escapeHtml(title)}</h2>
+    <div class="message">${escapeHtml(message).replace(/\n/g, "<br>")}</div>
+
+    <p><strong>Percurso de escrita</strong></p>
+    <textarea class="input-area" rows="12" style="white-space:pre-wrap;">${escapeHtml(history)}</textarea>
+
+    <button class="button" id="copy">Copiar percurso</button>
+    <button class="button" id="home">Voltar ao início</button>
+  `);
+
+  d.querySelector("#copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(history);
+      alert("Percurso copiado!");
+    } catch {
+      alert("Não consegui copiar automaticamente. Selecione o texto e copie manualmente.");
+    }
+  });
+
+  d.querySelector("#home").addEventListener("click", showWelcome);
+  render(d);
+}
 document.addEventListener("DOMContentLoaded", showWelcome);
