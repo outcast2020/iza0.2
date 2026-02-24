@@ -7,7 +7,7 @@
 
 // 1) Cole aqui a URL /exec do seu Web App (Apps Script)
 const WEBAPP_URL =
-  "https://script.google.com/macros/s/AKfycbxOcpjQuBeCsOPWQ5M07OOSJVzvSYOl32lfjhRqWU1vHDxa8CGmly0ykIuY8R7qLg4m/exec";
+  "https://script.google.com/macros/s/AKfycbx2CDkA7TVIFNu8dsnMgEg2_WjYq8-Yntu_NoV89UE8rVdioFJZbT6cjbGCDNP7brrk/exec";
 
 // 2) Config
 const MIN_INSPIRED_ROUNDS = 7;
