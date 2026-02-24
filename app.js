@@ -1,5 +1,8 @@
 // Aplicativo IZA
 
+// URL do Google Apps Script publicado como Web App (Deploy → Web app)
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxOcpjQuBeCsOPWQ5M07OOSJVzvSYOl32lfjhRqWU1vHDxa8CGmly0ykIuY8R7qLg4m/exec";
+
 // Estado global
 let state = {
   // Nome e email são coletados na tela inicial
@@ -9,7 +12,8 @@ let state = {
   track: null,
   trackStep: 0,
   trackData: {},
-  conversation: []
+  conversation: [],
+  sent: false // evita envio duplicado
 };
 
 // Perguntas do teste de presença
@@ -73,6 +77,7 @@ function classifyProfile(answers) {
   const max = Math.max(counts.A, counts.B, counts.C, counts.D);
   const tied = Object.keys(counts).filter(k => counts[k] === max);
   let profileKey;
+
   if (tied.length === 1) {
     profileKey = tied[0];
   } else if (tied.length === 2) {
@@ -82,6 +87,7 @@ function classifyProfile(answers) {
   } else {
     profileKey = "A";
   }
+
   const profiles = {
     A: {
       name: "IZA Discreta",
@@ -100,6 +106,7 @@ function classifyProfile(answers) {
       message: "Vou ficar quase invisível: pouco ruído, mais espaço pra você escrever. Podemos ajustar isso a qualquer momento."
     }
   };
+
   return profiles[profileKey];
 }
 
@@ -114,8 +121,25 @@ function render(content) {
   }
 }
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 // Início: tela de boas-vindas
 function showWelcome() {
+  // reset básico
+  state.profile = null;
+  state.track = null;
+  state.trackStep = 0;
+  state.trackData = {};
+  state.conversation = [];
+  state.sent = false;
+
   const container = document.createElement('div');
   container.className = 'card';
   container.innerHTML = `
@@ -131,14 +155,17 @@ function showWelcome() {
   container.querySelector('#startTest').addEventListener('click', () => {
     const name = /** @type {HTMLInputElement} */(document.getElementById('userName')).value.trim();
     const email = /** @type {HTMLInputElement} */(document.getElementById('userEmail')).value.trim();
+
     if (!name || !email) {
       alert('Por favor, preencha seu nome e e-mail antes de continuar.');
       return;
     }
+
     state.name = name;
     state.email = email;
     showTest();
   });
+
   render(container);
 }
 
@@ -148,14 +175,18 @@ function showTest() {
   const form = document.createElement('div');
   form.className = 'card';
   form.innerHTML = '<h2>Teste de Ajuste de Presença</h2>';
+
   testQuestions.forEach((q, idx) => {
     const qDiv = document.createElement('div');
     qDiv.className = 'question-block';
+
     const qTitle = document.createElement('p');
     qTitle.innerHTML = '<strong>' + q.title + ':</strong> ' + q.question;
     qDiv.appendChild(qTitle);
+
     const optsDiv = document.createElement('div');
     optsDiv.className = 'options';
+
     q.options.forEach(opt => {
       const label = document.createElement('label');
       const radio = document.createElement('input');
@@ -163,20 +194,22 @@ function showTest() {
       radio.name = 'q' + idx;
       radio.value = opt.value;
       label.appendChild(radio);
-      const textNode = document.createTextNode(' ' + opt.text);
-      label.appendChild(textNode);
+      label.appendChild(document.createTextNode(' ' + opt.text));
       optsDiv.appendChild(label);
     });
+
     qDiv.appendChild(optsDiv);
     form.appendChild(qDiv);
   });
+
   const btn = document.createElement('button');
   btn.className = 'button';
   btn.textContent = 'Concluir';
   btn.disabled = true;
+
   btn.addEventListener('click', () => {
     const answers = [];
-    for (let i=0; i<testQuestions.length; i++) {
+    for (let i = 0; i < testQuestions.length; i++) {
       const selected = form.querySelector('input[name="q'+i+'"]:checked');
       answers.push(selected.value);
     }
@@ -184,6 +217,7 @@ function showTest() {
     state.profile = result.name;
     showProfile(result);
   });
+
   form.appendChild(btn);
 
   // Habilitar botão quando todas respostas marcadas
@@ -202,8 +236,8 @@ function showProfile(profile) {
   div.innerHTML = `
     <h2>Resultado</h2>
     <div class="message">
-      <strong>${profile.name}</strong><br>
-      ${profile.message}
+      <strong>${escapeHtml(profile.name)}</strong><br>
+      ${escapeHtml(profile.message)}
     </div>
     <p>Agora escolha a trilha que melhor se encaixa no seu momento de escrita:</p>
     <button class="button" id="trilha1">Trilha Iniciante (4 etapas)</button>
@@ -211,10 +245,12 @@ function showProfile(profile) {
     <button class="button" id="trilha3">Trilha Inspirado/a (conversa aberta)</button>
     <br><button class="button" id="restartTest" style="background:#a0896a;margin-top:10px;">Refazer teste</button>
   `;
+
   div.querySelector('#trilha1').addEventListener('click', () => startTrack('iniciante'));
   div.querySelector('#trilha2').addEventListener('click', () => startTrack('intermediaria'));
   div.querySelector('#trilha3').addEventListener('click', () => startTrack('inspirada'));
   div.querySelector('#restartTest').addEventListener('click', showTest);
+
   render(div);
 }
 
@@ -224,6 +260,8 @@ function startTrack(name) {
   state.trackStep = 0;
   state.trackData = {};
   state.conversation = [];
+  state.sent = false;
+
   if (name === 'inspirada') {
     state.trackData.entries = [];
   }
@@ -240,7 +278,6 @@ function mirror(text) {
 // Perguntas e lógicas das trilhas
 const tracks = {
   iniciante: [
-    // Step 0: núcleo
     {
       prompt: 'Etapa 1 — Núcleo\nEscreva livremente sobre seu tema.',
       response: (input) => {
@@ -249,21 +286,20 @@ const tracks = {
       }
     },
     {
-      prompt: '', // follow-up central
+      prompt: '',
       response: (input) => {
         state.trackData.centro = input;
         return 'É por aqui? (s/n)';
       }
     },
     {
-      prompt: '', // confirmation yes/no
+      prompt: '',
       response: () => {
         return 'Ok, vamos para a próxima etapa. O que está em jogo aqui?';
       }
     },
-    // Step 2: atrito
     {
-      prompt: '', // answer to question
+      prompt: '',
       response: (input) => {
         state.trackData.atrito = input;
         return 'Onde isso se torna mais claro?';
@@ -276,7 +312,6 @@ const tracks = {
         return 'Traz uma situação concreta.';
       }
     },
-    // Step 3: exemplo
     {
       prompt: '',
       response: (input) => {
@@ -291,7 +326,6 @@ const tracks = {
         return 'Escreva uma frase que você quer que fique.';
       }
     },
-    // Step 4: frase final
     {
       prompt: '',
       response: (input) => {
@@ -308,7 +342,6 @@ const tracks = {
           state.trackData = {};
           return 'Vamos ajustar. Recomeçando na etapa 1 — Núcleo.\nEscreva livremente sobre seu tema.';
         } else {
-          // Quando encerrar, registrar log
           registerAndFinish();
           return 'Obrigado por usar a IZA. Você pode reiniciar ou escolher outra trilha na tela inicial.';
         }
@@ -316,7 +349,6 @@ const tracks = {
     }
   ],
   intermediaria: [
-    // Step 0: tema
     {
       prompt: 'Etapa 1 — Tema\nEm poucas palavras qual é o tema?',
       response: (input) => {
@@ -324,7 +356,6 @@ const tracks = {
         return mirror(input) + '\nQue pergunta move esse texto?';
       }
     },
-    // Step 1: pergunta
     {
       prompt: '',
       response: (input) => {
@@ -332,7 +363,6 @@ const tracks = {
         return 'O que está em jogo aqui?';
       }
     },
-    // Step 2: atrito
     {
       prompt: '',
       response: (input) => {
@@ -347,7 +377,6 @@ const tracks = {
         return 'O que você começa a pensar sobre isso?';
       }
     },
-    // Step 3: meta-compreensão
     {
       prompt: '',
       response: (input) => {
@@ -355,7 +384,6 @@ const tracks = {
         return mirror(input) + '\nTraz um exemplo que sustente isso.';
       }
     },
-    // Step 4: exemplo
     {
       prompt: '',
       response: (input) => {
@@ -370,7 +398,6 @@ const tracks = {
         return 'Reúna tudo em 3 linhas.';
       }
     },
-    // Step 5: síntese
     {
       prompt: '',
       response: (input) => {
@@ -385,7 +412,6 @@ const tracks = {
         return 'Escreve a versão que você levaria adiante.';
       }
     },
-    // Step 6: forma final
     {
       prompt: '',
       response: (input) => {
@@ -430,36 +456,44 @@ function runStep() {
 function showInteraction(promptText, responseFn) {
   const div = document.createElement('div');
   div.className = 'card';
+
   const promptP = document.createElement('p');
-  promptP.innerHTML = promptText.replace(/\n/g,'<br>');
+  promptP.innerHTML = (promptText || '').replace(/\n/g,'<br>');
   div.appendChild(promptP);
+
   const textarea = document.createElement('textarea');
   textarea.className = 'input-area';
   textarea.rows = 4;
   div.appendChild(textarea);
+
   const submit = document.createElement('button');
   submit.className = 'button';
   submit.textContent = 'Enviar';
   submit.addEventListener('click', () => {
     const input = textarea.value.trim();
     if (!input) return;
+
     state.conversation.push({ prompt: promptText, user: input });
+
     const reply = responseFn(input);
     state.trackStep += 1;
+
     const msgDiv = document.createElement('div');
     msgDiv.className = 'card';
-    msgDiv.innerHTML = '<div class="message">' + reply.replace(/\n/g,'<br>') + '</div>';
+    msgDiv.innerHTML = '<div class="message">' + escapeHtml(reply).replace(/\n/g,'<br>') + '</div>';
+
     render(msgDiv);
     setTimeout(runStep, 100);
   });
+
   div.appendChild(submit);
   render(div);
 }
 
 // Show completion message
 function showCompletion() {
-  // Ao encerrar naturalmente, registra a sessão
   registerAndFinish();
+
   const div = document.createElement('div');
   div.className = 'card';
   div.innerHTML = '<h2>Trilha encerrada</h2><p>Você concluiu a trilha. Obrigado por escrever com a IZA!</p><button class="button" id="restart">Voltar ao início</button>';
@@ -470,93 +504,137 @@ function showCompletion() {
 // Trilha inspirada (conversa aberta)
 function showInspired() {
   const rounds = state.trackData.rounds || 0;
+
   if (rounds >= 7) {
-    const first = state.trackData.entries[0] || '';
-    const last = state.trackData.entries[state.trackData.entries.length-1] || '';
+    const first = state.trackData.entries?.[0] || '';
+    const last = state.trackData.entries?.[state.trackData.entries.length-1] || '';
+
     const div = document.createElement('div');
     div.className = 'card';
-    div.innerHTML = '<h2>Modo Inspirado encerrado</h2><p>Parece que uma ideia está se formando.</p><p>Primeira escrita:<br><em>' + first + '</em></p><p>Última versão:<br><em>' + last + '</em></p><p>Isso pode ser um ponto de partida, quer salvar? (escreva sim ou não)</p>';
+    div.innerHTML =
+      '<h2>Modo Inspirado encerrado</h2>' +
+      '<p>Parece que uma ideia está se formando.</p>' +
+      '<p>Primeira escrita:<br><em>' + escapeHtml(first) + '</em></p>' +
+      '<p>Última versão:<br><em>' + escapeHtml(last) + '</em></p>' +
+      '<p>Isso pode ser um ponto de partida, quer salvar? (escreva sim ou não)</p>';
+
     const textarea = document.createElement('textarea');
     textarea.className = 'input-area';
     textarea.rows = 2;
     div.appendChild(textarea);
+
     const btn = document.createElement('button');
     btn.className = 'button';
     btn.textContent = 'Responder';
     btn.addEventListener('click', () => {
-      const txt = textarea.value.trim();
       registerAndFinish();
       render('<div class="card"><div class="message">Obrigado por sua resposta. Você pode reiniciar ou escolher outra trilha na tela inicial.</div></div>');
       setTimeout(showWelcome, 2000);
     });
+
     div.appendChild(btn);
     render(div);
     return;
   }
+
   const questions = [
     'O que disso você quer desenvolver?',
     'Onde isso aparece concretamente?',
     'O que ainda está implícito?'
   ];
+
   const qIdx = rounds % questions.length;
   const question = questions[qIdx];
+
   const div = document.createElement('div');
   div.className = 'card';
+
   const p = document.createElement('p');
   p.innerHTML = 'Escreva seu texto livremente:';
   div.appendChild(p);
+
   const textarea = document.createElement('textarea');
   textarea.className = 'input-area';
   textarea.rows = 4;
   div.appendChild(textarea);
+
   const btn = document.createElement('button');
   btn.className = 'button';
   btn.textContent = 'Enviar';
   btn.addEventListener('click', () => {
     const text = textarea.value.trim();
     if (!text) return;
+
     if (!state.trackData.entries) state.trackData.entries = [];
     state.trackData.entries.push(text);
+
     const mirrorText = mirror(text);
-    const response = mirrorText + '<br>' + question;
+    const response = mirrorText + '\n' + question;
+
     state.trackData.rounds = (state.trackData.rounds || 0) + 1;
+
     const replyDiv = document.createElement('div');
     replyDiv.className = 'card';
-    replyDiv.innerHTML = '<div class="message">' + response + '</div>';
+    replyDiv.innerHTML = '<div class="message">' + escapeHtml(response).replace(/\n/g,'<br>') + '</div>';
+
     render(replyDiv);
     setTimeout(showInspired, 100);
   });
+
   div.appendChild(btn);
   render(div);
 }
 
-// Função para registrar conversas e enviar por email / planilha
-function registerAndFinish() {
-  // Monta objeto com dados da sessão para envio
+// Função para registrar conversas e enviar por email / planilha (via Web App)
+async function registerAndFinish() {
+  if (state.sent) return; // evita duplicar envios
+  state.sent = true;
+
   const log = {
     name: state.name,
     email: state.email,
     profile: state.profile,
     track: state.track,
-    conversation: state.conversation
+    conversation: state.conversation,
+    ts: new Date().toISOString(),
+    page: window.location.href
   };
-  // Se estivermos rodando dentro de um ambiente Google Apps Script (ex.: Google Sheets), usamos google.script.run
-  if (typeof google !== 'undefined' && google.script && google.script.run) {
-    try {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          console.log('Sessão registrada com sucesso.', res);
-        })
-        .withFailureHandler(function(err) {
-          console.error('Erro ao registrar sessão:', err);
-        })
-        .saveGameLog(log);
-    } catch (e) {
-      console.error('google.script.run não disponível:', e);
+
+  // feedback visual rápido
+  const app = document.getElementById('app');
+  if (app) {
+    const note = document.createElement('div');
+    note.className = 'card';
+    note.innerHTML = '<div class="message">Salvando seu registro…</div>';
+    app.appendChild(note);
+  }
+
+  try {
+    const res = await fetch(WEBAPP_URL, {
+      method: "POST",
+      mode: "cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(log)
+    });
+
+    const text = await res.text();
+    console.log("Resposta do Web App:", text);
+
+    // opcional: mostrar confirmação
+    if (app) {
+      const ok = document.createElement('div');
+      ok.className = 'card';
+      ok.innerHTML = '<div class="message">Registro enviado ✅ Você receberá uma cópia por e-mail.</div>';
+      app.appendChild(ok);
     }
-  } else {
-    // Se não há integração disponível, apenas loga no console.
-    console.log('Registro da jogada (sem envio):', log);
+  } catch (err) {
+    console.error("Falha ao enviar registro:", err);
+    if (app) {
+      const fail = document.createElement('div');
+      fail.className = 'card';
+      fail.innerHTML = '<div class="message">Não consegui enviar o registro agora. Você pode tentar novamente recarregando a página.</div>';
+      app.appendChild(fail);
+    }
   }
 }
 
