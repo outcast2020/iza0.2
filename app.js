@@ -3,9 +3,12 @@
 // Refactor total: 3 trilhas × 4 presenças (12 modos)
 // Inspirada: motor ELIZA-like focado em autoria
 // Registro: Google Apps Script Web App via fetch
+// PATCH 1: trocar 2 chamadas p/ showEndScreenWithHistory
+// PATCH 2: feedback "Salvando..." no final
+// PATCH 3: upgrade showPromptInput (foco, ctrl+enter, anti-duplo-clique)
 // ===========================
 
-// 1) Cole aqui a URL /exec do seu Web App (Apps Script)
+// 1) URL /exec do seu Web App (Apps Script)
 const WEBAPP_URL =
   "https://script.google.com/macros/s/AKfycbx2CDkA7TVIFNu8dsnMgEg2_WjYq8-Yntu_NoV89UE8rVdioFJZbT6cjbGCDNP7brrk/exec";
 
@@ -26,12 +29,10 @@ const state = {
   startedAtISO: null,
   pageURL: "",
   lastIzaText: "",
-  // log completo: mantém turnos user/iza com timestamps
   turns: [] // {role:"user"|"iza", text, meta:{track, step, presence, t}}
 };
 
 function newSessionId() {
-  // simples e suficiente (não criptográfico)
   return (
     "iza-" +
     Date.now().toString(36) +
@@ -50,12 +51,11 @@ const PRESENCES = {
     key: "A",
     name: "IZA Discreta",
     vibe: "leve",
-    // intensidade: menos texto, 1 pergunta no final
     mirror: "short",
     maxQuestions: 1,
     softeners: ["", "Se fizer sentido,", "Talvez,"],
     closings: ["", "Pode seguir.", "Quando quiser, continue."],
-    directiveLevel: 0 // 0 = mínimo
+    directiveLevel: 0
   },
   B: {
     key: "B",
@@ -65,7 +65,7 @@ const PRESENCES = {
     maxQuestions: 1,
     softeners: ["Entendi.", "Tô com você.", "Certo."],
     closings: ["Se quiser, a gente ajusta.", "Pode seguir."],
-    directiveLevel: 1 // acolhe e encoraja
+    directiveLevel: 1
   },
   C: {
     key: "C",
@@ -75,7 +75,7 @@ const PRESENCES = {
     maxQuestions: 2,
     softeners: ["Vamos focar.", "Certo."],
     closings: ["Responda direto.", "Vamos para a próxima."],
-    directiveLevel: 2 // mais diretiva
+    directiveLevel: 2
   },
   D: {
     key: "D",
@@ -90,7 +90,6 @@ const PRESENCES = {
 };
 
 function presenceMessage(p) {
-  // mensagem pós-teste, sem “perfil psicológico” e sem cara de algoritmo
   if (!p) return "";
   const base = {
     A: "Vou te acompanhar de forma leve, com poucas interferências. Podemos ajustar isso a qualquer momento.",
@@ -210,24 +209,20 @@ function classifyPresence(answers) {
   const tied = Object.keys(counts).filter((k) => counts[k] === max);
   let key;
 
-  if (tied.length === 1) {
-    key = tied[0];
-  } else if (tied.length === 2) {
+  if (tied.length === 1) key = tied[0];
+  else if (tied.length === 2) {
     const combo = tied.slice().sort().join("");
     const tieMap = { AB: "A", BC: "B", CD: "C", AD: "D" };
     key = tieMap[combo] || tied[0];
-  } else {
-    key = "A";
-  }
+  } else key = "A";
 
   return PRESENCES[key];
 }
 
 // 7) Motor ELIZA-like (foco em autoria, com memória e presença)
-
 const IZA_ENGINE = {
   memory: [],
-  usedRecently: [] // evita repetição de respostas
+  usedRecently: []
 };
 
 const pronounPairs = [
@@ -247,7 +242,6 @@ const pronounPairs = [
 
 function swapPronouns(text) {
   let out = String(text || "");
-  // placeholders
   const reps = pronounPairs.map((p) => p[1]);
   pronounPairs.forEach(([re], i) => {
     out = out.replace(re, `__P${i}__`);
@@ -260,7 +254,6 @@ function swapPronouns(text) {
 
 function pick(arr) {
   if (!arr || arr.length === 0) return "";
-  // evita repetir o mesmo texto imediatamente
   for (let tries = 0; tries < 6; tries++) {
     const candidate = arr[Math.floor(Math.random() * arr.length)];
     if (!IZA_ENGINE.usedRecently.includes(candidate)) {
@@ -285,7 +278,6 @@ function shortMirrorByPresence(presence, userText) {
     const w = words.slice(0, 10).join(" ");
     return `Você está escrevendo: “${swapPronouns(w)}…”.`;
   }
-  // medium
   const w = words.slice(0, 16).join(" ");
   return `Você parece estar dizendo: “${swapPronouns(w)}…”.`;
 }
@@ -299,9 +291,7 @@ function applyReasmb(template, match) {
   return out;
 }
 
-// Script autoral (prioridade alta primeiro)
 const IZA_SCRIPT = [
-  // Sarau / inclusão / ancestralidade
   {
     key: /(sarau|inclus[aã]o|diversidade|libras|teatro|declama[cç][aã]o|ancestralidade|audiovisual)/i,
     decomps: [
@@ -319,7 +309,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-  // Discriminação / resistência / palco
   {
     key: /(discriminad|n[aã]o era lugar|n[aã]o deixaram|resist|lutou|palco)/i,
     decomps: [
@@ -334,7 +323,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-  // Sentimento preso / falta de apoio
   {
     key: /(ningu[eé]m apoia|n[aã]o acredita|preso|guardado|n[aã]o d[aá] pra expressar)/i,
     decomps: [
@@ -349,7 +337,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-  // Palafitas / raiz / origem
   {
     key: /(palafit|raiz|onde est[aá] minha raiz|cresci)/i,
     decomps: [
@@ -364,7 +351,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-  // Progresso / coragem / suor
   {
     key: /(progresso|coragem|suor|gente dedicada)/i,
     decomps: [
@@ -379,7 +365,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-  // Coletivo / laje / mulheres / todes
   {
     key: /(mulher|laje|grupo|todes|encontrar|coletivo)/i,
     decomps: [
@@ -394,7 +379,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-  // “meu/minha” — autoria/proteção/revelação
   {
     key: /\b(meu|minha|meus|minhas)\b/i,
     decomps: [
@@ -409,7 +393,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-  // Fallback NONE
   {
     key: /(.*)/i,
     decomps: [
@@ -428,33 +411,25 @@ const IZA_SCRIPT = [
 ];
 
 function applyPresenceWrap(presence, coreText) {
-  // presença muda “tom” e quantidade de instrução
   const soft = pick(presence.softeners);
   const close = pick(presence.closings);
 
-  if (presence.key === "D") {
-    // minimalista: quase sem moldura
-    return coreText.replace(/\n{2,}/g, "\n");
-  }
+  if (presence.key === "D") return coreText.replace(/\n{2,}/g, "\n");
 
   if (presence.key === "A") {
-    // discreta: um toque, sem enrolar
     const prefix = soft ? soft + " " : "";
     const suffix = close ? "\n" + close : "";
     return (prefix + coreText + suffix).trim();
   }
 
   if (presence.key === "B") {
-    // calorosa: acolhe sem virar terapia
     const prefix = soft ? soft + " " : "Certo. ";
     const suffix = close ? "\n" + close : "\nPodemos seguir.";
     return (prefix + coreText + suffix).trim();
   }
 
-  // firme (C): direta e organizada
   if (presence.key === "C") {
     const prefix = soft ? soft + " " : "";
-    // às vezes pede 2 perguntas
     return (prefix + coreText).trim();
   }
 
@@ -466,9 +441,14 @@ function izaReply(userText) {
   const t = (userText || "").trim();
   if (!t) return presence.key === "D" ? "Continue." : "Pode seguir.";
 
-  // chance de usar memória (mais no B/C; menos no D)
   const memChance =
-    presence.key === "C" ? 0.35 : presence.key === "B" ? 0.30 : presence.key === "A" ? 0.20 : 0.10;
+    presence.key === "C"
+      ? 0.35
+      : presence.key === "B"
+      ? 0.30
+      : presence.key === "A"
+      ? 0.20
+      : 0.10;
 
   if (IZA_ENGINE.memory.length > 0 && Math.random() < memChance) {
     const mirror = shortMirrorByPresence(presence, t);
@@ -476,7 +456,6 @@ function izaReply(userText) {
     return applyPresenceWrap(presence, [mirror, mem].filter(Boolean).join("\n"));
   }
 
-  // encontra regra por prioridade
   for (const rule of IZA_SCRIPT) {
     if (!rule.key.test(t)) continue;
 
@@ -486,32 +465,28 @@ function izaReply(userText) {
 
       const mirror = shortMirrorByPresence(presence, t);
 
-      // escolhe 1 ou 2 perguntas (C pode 2)
       const q1 = pick(d.reasmb);
       let qText = applyReasmb(q1, m);
 
       if (presence.key === "C" && presence.maxQuestions >= 2 && Math.random() < 0.30) {
-        // segunda pergunta curta, escolhida do fallback (ou do mesmo)
-        const extraPool = d.reasmb.length > 1 ? d.reasmb.filter((x) => x !== q1) : IZA_SCRIPT[IZA_SCRIPT.length - 1].decomps[0].reasmb;
+        const extraPool =
+          d.reasmb.length > 1
+            ? d.reasmb.filter((x) => x !== q1)
+            : IZA_SCRIPT[IZA_SCRIPT.length - 1].decomps[0].reasmb;
+
         const q2 = pick(extraPool);
-        const q2Text = applyReasmb(q2, m);
-        qText = qText + "\n" + q2Text;
+        qText = qText + "\n" + applyReasmb(q2, m);
       }
 
-      // empilha memória
       if (d.memory && d.memory.length) {
         const memT = pick(d.memory);
         IZA_ENGINE.memory.push(applyReasmb(memT, m));
         if (IZA_ENGINE.memory.length > 8) IZA_ENGINE.memory.shift();
       }
 
-      // minimalista: muitas vezes só pergunta sem espelho
       let core;
-      if (presence.key === "D" && Math.random() < 0.55) {
-        core = qText;
-      } else {
-        core = [mirror, qText].join("\n");
-      }
+      if (presence.key === "D" && Math.random() < 0.55) core = qText;
+      else core = [mirror, qText].join("\n");
 
       return applyPresenceWrap(presence, core);
     }
@@ -520,8 +495,7 @@ function izaReply(userText) {
   return applyPresenceWrap(presence, "Pode continuar.");
 }
 
-// 8) Trilhas estruturadas (prompts sempre explícitos)
-
+// 8) Trilhas
 const TRACKS = {
   iniciante: {
     name: "Trilha Iniciante (4 etapas)",
@@ -531,7 +505,6 @@ const TRACKS = {
         prompt:
           "Etapa 1 — Núcleo\nEscreva livremente sobre seu tema. (Pode ser verso, prosa, rascunho.)",
         onUser: (text) => {
-          // primeira fala: ELIZA-like + foco “centro”
           const reply = izaReply(text);
           return reply + "\n\nEm 1–2 frases: qual é o centro disso?";
         }
@@ -539,10 +512,7 @@ const TRACKS = {
       {
         key: "centro",
         prompt: "Escreva em 1–2 frases qual é o centro disso.",
-        onUser: (text) => {
-          state.lastIzaText = "Centro anotado.";
-          return "É por aqui? Responda: s (sim) ou n (não).";
-        }
+        onUser: () => "É por aqui? Responda: s (sim) ou n (não)."
       },
       {
         key: "confirmacao",
@@ -550,8 +520,7 @@ const TRACKS = {
         onUser: (text) => {
           const t = text.trim().toLowerCase();
           if (t.startsWith("n")) {
-            // volta para reescrever centro
-            state.stepIndex = 1; // volta para step "centro"
+            state.stepIndex = 1;
             return "Tudo bem. Reescreva o centro em 1–2 frases, do jeito mais simples possível.";
           }
           return "Etapa 2 — Atrito\nO que está em jogo aqui? (conflito, dúvida, desejo, risco)";
@@ -560,37 +529,29 @@ const TRACKS = {
       {
         key: "atrito",
         prompt: "Etapa 2 — Atrito\nO que está em jogo aqui?",
-        onUser: (text) => {
-          return "Onde isso se torna mais claro? Traga um detalhe concreto.";
-        }
+        onUser: () => "Onde isso se torna mais claro? Traga um detalhe concreto."
       },
       {
         key: "atrito_detalhe",
         prompt: "Onde isso se torna mais claro? (detalhe concreto)",
-        onUser: (text) => {
-          return "Etapa 3 — Exemplo\nTraga uma situação concreta (uma cena, pessoa, lugar, acontecimento).";
-        }
+        onUser: () =>
+          "Etapa 3 — Exemplo\nTraga uma situação concreta (uma cena, pessoa, lugar, acontecimento)."
       },
       {
         key: "exemplo",
         prompt: "Etapa 3 — Exemplo\nTraga uma situação concreta.",
-        onUser: (text) => {
-          return "Esse exemplo mostra o quê? O que ele revela sobre sua ideia?";
-        }
+        onUser: () => "Esse exemplo mostra o quê? O que ele revela sobre sua ideia?"
       },
       {
         key: "exemplo_revelacao",
         prompt: "O que esse exemplo revela sobre sua ideia?",
-        onUser: (text) => {
-          return "Etapa 4 — Frase que fica\nEscreva uma frase/verso que você quer que fique.";
-        }
+        onUser: () =>
+          "Etapa 4 — Frase que fica\nEscreva uma frase/verso que você quer que fique."
       },
       {
         key: "frase_final",
         prompt: "Etapa 4 — Frase que fica\nEscreva uma frase/verso final.",
-        onUser: (text) => {
-          return "Quer ajustar (a) ou encerrar (e)?";
-        }
+        onUser: () => "Quer ajustar (a) ou encerrar (e)?"
       },
       {
         key: "encerrar_ou_ajustar",
@@ -598,14 +559,13 @@ const TRACKS = {
         onUser: (text) => {
           const t = text.trim().toLowerCase();
           if (t.startsWith("a")) {
-            // recomeça trilha mantendo presença
             state.stepIndex = 0;
-            state.turns = []; // opcional: limpar log da trilha ao ajustar
+            state.turns = [];
             return "Vamos ajustar. Etapa 1 — Núcleo\nEscreva novamente sobre seu tema.";
           }
-          // encerra
           safeRegister();
-          return "Encerrado. Obrigado por escrever com a IZA.\n\nVoltar ao início?";
+          // PATCH 2: feedback de salvamento
+          return "Encerrado. Salvando seu registro… (1–2s)\n\nObrigado por escrever com a IZA.";
         },
         endScreen: true
       }
@@ -618,79 +578,59 @@ const TRACKS = {
       {
         key: "tema",
         prompt: "Etapa 1 — Tema\nEm poucas palavras, qual é o tema?",
-        onUser: (text) => {
-          return "Etapa 2 — Pergunta\nQue pergunta move esse texto?";
-        }
+        onUser: () => "Etapa 2 — Pergunta\nQue pergunta move esse texto?"
       },
       {
         key: "pergunta",
         prompt: "Etapa 2 — Pergunta\nQue pergunta move esse texto?",
-        onUser: (text) => {
-          return "Etapa 3 — Atrito\nO que está em jogo aqui?";
-        }
+        onUser: () => "Etapa 3 — Atrito\nO que está em jogo aqui?"
       },
       {
         key: "atrito",
         prompt: "Etapa 3 — Atrito\nO que está em jogo aqui?",
-        onUser: (text) => {
-          return "Onde isso aparece de forma concreta? (uma cena, lugar, fala)";
-        }
+        onUser: () => "Onde isso aparece de forma concreta? (uma cena, lugar, fala)"
       },
       {
         key: "concreto",
         prompt: "Onde isso aparece de forma concreta?",
-        onUser: (text) => {
-          return "Etapa 4 — Meta-compreensão\nO que você começa a pensar sobre isso?";
-        }
+        onUser: () =>
+          "Etapa 4 — Meta-compreensão\nO que você começa a pensar sobre isso?"
       },
       {
         key: "meta",
         prompt: "Etapa 4 — Meta-compreensão\nO que você começa a pensar sobre isso?",
-        onUser: (text) => {
-          // presença influencia: C pede mais direto; D fica curto
-          if (state.presenceKey === "C") {
+        onUser: () => {
+          if (state.presenceKey === "C")
             return "Etapa 5 — Exemplo\nTraga um exemplo específico que sustente isso.";
-          }
-          if (state.presenceKey === "D") {
-            return "Exemplo.";
-          }
+          if (state.presenceKey === "D") return "Exemplo.";
           return "Etapa 5 — Exemplo\nTraga um exemplo que sustente isso.";
         }
       },
       {
         key: "exemplo",
         prompt: "Etapa 5 — Exemplo\nTraga um exemplo.",
-        onUser: (text) => {
-          return "Ele confirma ou complica sua ideia? (1–2 frases)";
-        }
+        onUser: () => "Ele confirma ou complica sua ideia? (1–2 frases)"
       },
       {
         key: "confirma_ou_complica",
         prompt: "Ele confirma ou complica sua ideia?",
-        onUser: (text) => {
-          return "Etapa 6 — Síntese\nReúna tudo em 3 linhas.";
-        }
+        onUser: () => "Etapa 6 — Síntese\nReúna tudo em 3 linhas."
       },
       {
         key: "sintese",
         prompt: "Etapa 6 — Síntese\nReúna tudo em 3 linhas.",
-        onUser: (text) => {
-          return "O que precisa ficar? (a frase/verso que você não abre mão)";
-        }
+        onUser: () => "O que precisa ficar? (a frase/verso que você não abre mão)"
       },
       {
         key: "o_que_fica",
         prompt: "O que precisa ficar?",
-        onUser: (text) => {
-          return "Etapa 7 — Forma final\nEscreva a versão que você levaria adiante.";
-        }
+        onUser: () =>
+          "Etapa 7 — Forma final\nEscreva a versão que você levaria adiante."
       },
       {
         key: "forma_final",
         prompt: "Etapa 7 — Forma final\nEscreva a versão final.",
-        onUser: (text) => {
-          return "Quer continuar (c) ou encerrar (e)?";
-        }
+        onUser: () => "Quer continuar (c) ou encerrar (e)?"
       },
       {
         key: "encerrar_ou_continuar",
@@ -703,7 +643,8 @@ const TRACKS = {
             return "Vamos recomeçar.\n\nEtapa 1 — Tema\nEm poucas palavras, qual é o tema?";
           }
           safeRegister();
-          return "Encerrado. Obrigado por escrever com a IZA.\n\nVoltar ao início?";
+          // PATCH 2: feedback de salvamento
+          return "Encerrado. Salvando seu registro… (1–2s)\n\nObrigado por escrever com a IZA.";
         },
         endScreen: true
       }
@@ -712,7 +653,7 @@ const TRACKS = {
 
   inspirada: {
     name: "Trilha Inspirado/a (conversa aberta)",
-    steps: [] // gerenciada dinamicamente
+    steps: []
   }
 };
 
@@ -742,14 +683,12 @@ async function safeRegister() {
       body: JSON.stringify(payload)
     });
   } catch (e) {
-    // sem travar o app caso o envio falhe
     console.error("Falha ao enviar registro:", e);
   }
 }
 
-// 10) Navegação principal (máquina de estados)
+// 10) Navegação principal
 
-// Tela 0 — boas-vindas
 function showWelcome() {
   state.sessionId = newSessionId();
   state.startedAtISO = nowISO();
@@ -795,7 +734,6 @@ function showWelcome() {
   render(d);
 }
 
-// Tela 1 — teste de presença
 function showPresenceTest() {
   const form = document.createElement("div");
   form.className = "card";
@@ -825,7 +763,9 @@ function showPresenceTest() {
   btn.disabled = true;
 
   form.addEventListener("change", () => {
-    const ok = testQuestions.every((_, i) => form.querySelector(`input[name="q${i}"]:checked`));
+    const ok = testQuestions.every((_, i) =>
+      form.querySelector(`input[name="q${i}"]:checked`)
+    );
     btn.disabled = !ok;
   });
 
@@ -845,7 +785,6 @@ function showPresenceTest() {
   render(form);
 }
 
-// Tela 2 — resultado + trilhas
 function showPresenceResult() {
   const p = state.presence || PRESENCES.A;
 
@@ -869,7 +808,6 @@ function showPresenceResult() {
   render(d);
 }
 
-// Inicia trilha
 function startTrack(key) {
   state.trackKey = key;
   state.stepIndex = 0;
@@ -880,11 +818,8 @@ function startTrack(key) {
   IZA_ENGINE.memory = [];
   IZA_ENGINE.usedRecently = [];
 
-  if (key === "inspirada") {
-    showInspiredTurn(true);
-  } else {
-    showStructuredStep();
-  }
+  if (key === "inspirada") showInspiredTurn(true);
+  else showStructuredStep();
 }
 
 // Trilhas estruturadas
@@ -896,7 +831,6 @@ function showStructuredStep() {
   const step = steps[state.stepIndex];
 
   if (!step) {
-    // se acabou, encerra bonito
     safeRegister();
     return showEndScreenWithHistory("Trilha encerrada", "Obrigado por escrever com a IZA.");
   }
@@ -907,38 +841,33 @@ function showStructuredStep() {
     placeholder: "Escreva aqui…",
     button: "Enviar",
     onSubmit: (userText) => {
-      // log user
+      const beforeIndex = state.stepIndex; // robusto
+
       pushTurn("user", userText);
 
-      // IZA responde
       const izaText = step.onUser(userText);
       state.lastIzaText = izaText;
       pushTurn("iza", izaText);
 
-      // mostra resposta da IZA
       showIzaMessage(izaText, () => {
-        // stepIndex normalmente avança
-        // mas alguns steps (confirmação) podem ter alterado state.stepIndex dentro do onUser
-        const alreadyManipulated = step.key === "confirmacao" && state.stepIndex === 1;
-        if (!alreadyManipulated) state.stepIndex += 1;
+        // Se o step.onUser NÃO mexeu no stepIndex, avança
+        if (state.stepIndex === beforeIndex) state.stepIndex += 1;
 
-        // se for endScreen, mostra final com botão
+        // PATCH 1: usar tela final com histórico
         if (step.endScreen) {
-          return showEndScreen("Encerrado", izaText);
+          return showEndScreenWithHistory("Encerrado", izaText);
         }
 
-        // próximo passo
         showStructuredStep();
       });
     }
   });
 }
 
-// Trilha inspirada (impecável ELIZA-like)
+// Trilha inspirada
 function showInspiredTurn(isFirst = false) {
   const p = state.presence || PRESENCES.A;
 
-  // encerramento após MIN_INSPIRED_ROUNDS (com opção de continuar)
   if (!isFirst && state.inspiredRounds >= MIN_INSPIRED_ROUNDS) {
     const d = card(`
       <h2>IZA</h2>
@@ -949,23 +878,23 @@ function showInspiredTurn(isFirst = false) {
 
     d.querySelector("#end").addEventListener("click", () => {
       safeRegister();
-      showEndScreen(
+      // PATCH 1: usar tela final com histórico
+      showEndScreenWithHistory(
         "Registro pronto",
-        "Salvei seu registro. Você e o professor receberão uma cópia por e-mail."
+        // PATCH 2: feedback
+        "Salvando seu registro… (1–2s)\n\nVocê e o professor receberão uma cópia por e-mail."
       );
     });
 
-    d.querySelector("#cont").addEventListener("click", () => {
-      showInspiredTurn(true);
-    });
-
+    d.querySelector("#cont").addEventListener("click", () => showInspiredTurn(true));
     return render(d);
   }
 
-  // prompt inicial (não terapêutico)
   const prompt = isFirst
     ? "Sobre o que você quer escrever hoje?"
-    : (p.key === "D" ? "Continue." : "Escreva mais um pouco.");
+    : p.key === "D"
+    ? "Continue."
+    : "Escreva mais um pouco.";
 
   showPromptInput({
     title: TRACKS.inspirada.name,
@@ -981,14 +910,12 @@ function showInspiredTurn(isFirst = false) {
 
       state.inspiredRounds += 1;
 
-      showIzaMessage(reply, () => {
-        showInspiredTurn(false);
-      });
+      showIzaMessage(reply, () => showInspiredTurn(false));
     }
   });
 }
 
-// UI: prompt + textarea
+// PATCH 3 — UI: prompt + textarea (upgrade)
 function showPromptInput({ title, prompt, placeholder, button, onSubmit }) {
   const d = document.createElement("div");
   d.className = "card";
@@ -999,10 +926,29 @@ function showPromptInput({ title, prompt, placeholder, button, onSubmit }) {
     <button class="button" id="send">${escapeHtml(button)}</button>
   `;
 
-  d.querySelector("#send").addEventListener("click", () => {
-    const text = d.querySelector("#txt").value.trim();
+  const ta = d.querySelector("#txt");
+  const btn = d.querySelector("#send");
+
+  // foco automático
+  setTimeout(() => ta.focus(), 0);
+
+  // submit seguro (evita clique duplo)
+  const submitOnce = () => {
+    const text = ta.value.trim();
     if (!text) return;
+    btn.disabled = true;
+    btn.textContent = "Enviando…";
     onSubmit(text);
+  };
+
+  btn.addEventListener("click", submitOnce);
+
+  // Ctrl+Enter / Cmd+Enter para enviar
+  ta.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      submitOnce();
+    }
   });
 
   render(d);
@@ -1011,8 +957,6 @@ function showPromptInput({ title, prompt, placeholder, button, onSubmit }) {
 // UI: mostrar fala da IZA e botão continuar
 function showIzaMessage(text, onContinue) {
   const p = state.presence || PRESENCES.A;
-
-  // minimalista: às vezes sem título
   const header = p.key === "D" ? "" : "<h2>IZA</h2>";
 
   const d = card(`
@@ -1025,7 +969,7 @@ function showIzaMessage(text, onContinue) {
   render(d);
 }
 
-// UI: tela final
+// UI: tela final simples (mantida, mas agora quase não usada)
 function showEndScreen(title, message) {
   const d = card(`
     <h2>${escapeHtml(title)}</h2>
@@ -1037,7 +981,7 @@ function showEndScreen(title, message) {
   render(d);
 }
 
-// init
+// Histórico
 function buildPrettyHistoryText() {
   const lines = [];
   lines.push("IZA no Cordel 2.0 — Percurso de escrita");
@@ -1049,21 +993,29 @@ function buildPrettyHistoryText() {
   lines.push("");
 
   state.turns.forEach((t, i) => {
-    const who = (t.role === "iza") ? "IZA" : "Você";
+    const who = t.role === "iza" ? "IZA" : "Você";
     lines.push(`${i + 1}. ${who}:`);
     lines.push((t.text || "").trim() || "[vazio]");
     lines.push("");
   });
 
   const userTexts = state.turns
-    .filter(x => x.role === "user")
-    .map(x => (x.text || "").trim())
+    .filter((x) => x.role === "user")
+    .map((x) => (x.text || "").trim())
     .filter(Boolean);
 
   if (userTexts.length) {
     lines.push("Resumo:");
-    lines.push(`- Primeira escrita: ${userTexts[0].slice(0, 260)}${userTexts[0].length > 260 ? "…" : ""}`);
-    lines.push(`- Última versão: ${userTexts[userTexts.length - 1].slice(0, 260)}${userTexts[userTexts.length - 1].length > 260 ? "…" : ""}`);
+    lines.push(
+      `- Primeira escrita: ${userTexts[0].slice(0, 260)}${
+        userTexts[0].length > 260 ? "…" : ""
+      }`
+    );
+    lines.push(
+      `- Última versão: ${userTexts[userTexts.length - 1].slice(0, 260)}${
+        userTexts[userTexts.length - 1].length > 260 ? "…" : ""
+      }`
+    );
   }
 
   return lines.join("\n");
@@ -1094,4 +1046,6 @@ function showEndScreenWithHistory(title, message) {
   d.querySelector("#home").addEventListener("click", showWelcome);
   render(d);
 }
+
+// init
 document.addEventListener("DOMContentLoaded", showWelcome);
