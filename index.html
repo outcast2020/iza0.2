@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IZA no Cordel 2.0</title>
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background-color: #f8f4ec;
+      color: #2c2c2c;
+    }
+    header {
+      background-color: #e7d3b6;
+      padding: 20px;
+      text-align: center;
+      border-bottom: 4px solid #d1b08a;
+    }
+    header img.logo {
+      width: 200px;
+      max-width: 90%;
+      height: auto;
+      margin-bottom: 10px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    header p {
+      margin: 4px 0 0;
+      font-size: 14px;
+      color: #5a4b3f;
+    }
+    main {
+      max-width: 800px;
+      margin: 20px auto;
+      padding: 0 20px 40px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .card h2 {
+      margin-top: 0;
+    }
+    .options label {
+      display: block;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #e0dad2;
+      margin: 6px 0;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .options label:hover {
+      background: #f5efe5;
+    }
+    .button {
+      display: inline-block;
+      padding: 12px 16px;
+      margin-top: 10px;
+      background-color: #5a4b3f;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .message {
+      padding: 16px;
+      background: #f3f7fb;
+      border-left: 4px solid #5a4b3f;
+      margin-bottom: 20px;
+      border-radius: 8px;
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #6e5c4a;
+      margin-top: 40px;
+    }
+    .input-area {
+      width: 100%;
+      padding: 10px;
+      margin-top: 8px;
+      margin-bottom: 8px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="assets/logo_cordel_color.png" class="logo" alt="Logo Cordel 2.0">
+    <h1>IZA no Cordel 2.0</h1>
+    <p>Uma ancestral que te ajuda a pensar durante o processo de escrita.</p>
+  </header>
+  <main id="app">
+    <!-- Conteúdo dinâmico será injetado aqui -->
+  </main>
+  <footer class="footer">
+    &copy; 2026 Cordel 2.0 – Projeto IZA
+  </footer>
+<script>
+// Aplicativo IZA
+// Estado global
+let state = {
+  profile: null,
+  track: null,
+  trackStep: 0,
+  trackData: {},
+  conversation: []
+};
+
+// Perguntas do teste de presença
+const testQuestions = [
+  {
+    title: "Pergunta 1",
+    question: "Quando você escreve, o que ajuda mais?",
+    options: [
+      { value: "A", text: "Perguntas suaves que me deixem pensar" },
+      { value: "B", text: "Um tom próximo e acolhedor" },
+      { value: "C", text: "Direcionamento claro" },
+      { value: "D", text: "Poucas interferências" }
+    ]
+  },
+  {
+    title: "Pergunta 2",
+    question: "Se seu texto estiver confuso, você prefere:",
+    options: [
+      { value: "A", text: "Uma pergunta aberta" },
+      { value: "B", text: "Um convite para desenrolar" },
+      { value: "C", text: "Um pedido direto de clareza" },
+      { value: "D", text: "Silêncio e espaço" }
+    ]
+  },
+  {
+    title: "Pergunta 3",
+    question: "O ritmo ideal de conversa é:",
+    options: [
+      { value: "A", text: "Calmo e leve" },
+      { value: "B", text: "Conversado" },
+      { value: "C", text: "Objetivo" },
+      { value: "D", text: "Quase silencioso" }
+    ]
+  },
+  {
+    title: "Pergunta 4",
+    question: "Você está escrevendo hoje mais para:",
+    options: [
+      { value: "A", text: "Explorar ideias" },
+      { value: "B", text: "Expressar algo pessoal" },
+      { value: "C", text: "Organizar pensamento" },
+      { value: "D", text: "Só colocar no papel" }
+    ]
+  },
+  {
+    title: "Pergunta 5",
+    question: "Como você quer que a IZA apareça?",
+    options: [
+      { value: "A", text: "Discreta" },
+      { value: "B", text: "Próxima" },
+      { value: "C", text: "Estruturadora" },
+      { value: "D", text: "Quase invisível" }
+    ]
+  }
+];
+
+// Determinação de perfil e mensagens
+function classifyProfile(answers) {
+  const counts = { A: 0, B: 0, C: 0, D: 0 };
+  answers.forEach(a => { if (counts[a] !== undefined) counts[a]++; });
+  const max = Math.max(counts.A, counts.B, counts.C, counts.D);
+  const tied = Object.keys(counts).filter(k => counts[k] === max);
+  let profileKey;
+  if (tied.length === 1) {
+    profileKey = tied[0];
+  } else if (tied.length === 2) {
+    const combo = tied.sort().join("");
+    const tieMap = { "AB": "A", "BC": "B", "CD": "C", "AD": "D" };
+    profileKey = tieMap[combo] || tied.sort((a,b) => "ABCD".indexOf(a) - "ABCD".indexOf(b))[0];
+  } else {
+    profileKey = "A";
+  }
+  const profiles = {
+    A: {
+      name: "IZA Discreta",
+      message: "Vou te acompanhar de forma leve, com perguntas suaves quando fizer sentido. Podemos ajustar isso a qualquer momento."
+    },
+    B: {
+      name: "IZA Calorosa",
+      message: "Vou te acompanhar de um jeito próximo e acolhedor, te ajudando a desenrolar as ideias. Podemos ajustar isso a qualquer momento."
+    },
+    C: {
+      name: "IZA Firme",
+      message: "Vou te acompanhar com direção clara e estrutura, pra organizar seu texto com objetividade. Podemos ajustar isso a qualquer momento."
+    },
+    D: {
+      name: "IZA Minimalista",
+      message: "Vou ficar quase invisível: pouco ruído, mais espaço pra você escrever. Podemos ajustar isso a qualquer momento."
+    }
+  };
+  return profiles[profileKey];
+}
+
+// Função para mostrar páginas
+function render(content) {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  if (typeof content === 'string') {
+    app.innerHTML = content;
+  } else {
+    app.appendChild(content);
+  }
+}
+
+// Início: tela de boas-vindas
+function showWelcome() {
+  const container = document.createElement('div');
+  container.className = 'card';
+  container.innerHTML = `
+    <h2>Bem-vindo(a) ao Projeto IZA</h2>
+    <p>Este aplicativo é inspirado no clássico chatbot ELIZA de 1966 e foi criado para te ajudar a refletir e estruturar suas ideias durante o processo de escrita.</p>
+    <p>Antes de começarmos, vamos descobrir como você prefere que a IZA te acompanhe hoje.</p>
+    <button class="button" id="startTest">Fazer teste rápido</button>
+  `;
+  container.querySelector('#startTest').addEventListener('click', showTest);
+  render(container);
+}
+
+// Teste de ajuste de presença
+function showTest() {
+  state.profile = null;
+  const form = document.createElement('div');
+  form.className = 'card';
+  form.innerHTML = '<h2>Teste de Ajuste de Presença</h2>';
+  testQuestions.forEach((q, idx) => {
+    const qDiv = document.createElement('div');
+    qDiv.className = 'question-block';
+    const qTitle = document.createElement('p');
+    qTitle.innerHTML = '<strong>' + q.title + ':</strong> ' + q.question;
+    qDiv.appendChild(qTitle);
+    const optsDiv = document.createElement('div');
+    optsDiv.className = 'options';
+    q.options.forEach(opt => {
+      const label = document.createElement('label');
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'q' + idx;
+      radio.value = opt.value;
+      label.appendChild(radio);
+      const textNode = document.createTextNode(' ' + opt.text);
+      label.appendChild(textNode);
+      optsDiv.appendChild(label);
+    });
+    qDiv.appendChild(optsDiv);
+    form.appendChild(qDiv);
+  });
+  const btn = document.createElement('button');
+  btn.className = 'button';
+  btn.textContent = 'Concluir';
+  btn.disabled = true;
+  btn.addEventListener('click', () => {
+    const answers = [];
+    for (let i=0; i<testQuestions.length; i++) {
+      const selected = form.querySelector('input[name="q'+i+'"]:checked');
+      answers.push(selected.value);
+    }
+    const result = classifyProfile(answers);
+    state.profile = result.name;
+    showProfile(result);
+  });
+  form.appendChild(btn);
+
+  // Habilitar botão quando todas respostas marcadas
+  form.addEventListener('change', () => {
+    const allAnswered = testQuestions.every((_, i) => form.querySelector('input[name="q'+i+'"]:checked'));
+    btn.disabled = !allAnswered;
+  });
+
+  render(form);
+}
+
+// Mostrar resultado do teste e escolher trilha
+function showProfile(profile) {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.innerHTML = `
+    <h2>Resultado</h2>
+    <div class="message">
+      <strong>${profile.name}</strong><br>
+      ${profile.message}
+    </div>
+    <p>Agora escolha a trilha que melhor se encaixa no seu momento de escrita:</p>
+    <button class="button" id="trilha1">Trilha Iniciante (4 etapas)</button>
+    <button class="button" id="trilha2">Trilha Intermediária (7 etapas)</button>
+    <button class="button" id="trilha3">Trilha Inspirado/a (conversa aberta)</button>
+    <br><button class="button" id="restartTest" style="background:#a0896a;margin-top:10px;">Refazer teste</button>
+  `;
+  div.querySelector('#trilha1').addEventListener('click', () => startTrack('iniciante'));
+  div.querySelector('#trilha2').addEventListener('click', () => startTrack('intermediaria'));
+  div.querySelector('#trilha3').addEventListener('click', () => startTrack('inspirada'));
+  div.querySelector('#restartTest').addEventListener('click', showTest);
+  render(div);
+}
+
+// Iniciar uma trilha
+function startTrack(name) {
+  state.track = name;
+  state.trackStep = 0;
+  state.trackData = {};
+  state.conversation = [];
+  if (name === 'inspirada') {
+    state.trackData.entries = [];
+  }
+  runStep();
+}
+
+// Função de espelhamento simples (detecta últimas palavras)
+function mirror(text) {
+  const words = text.trim().split(/\s+/);
+  const last = words.slice(-5).join(' ');
+  return 'Você parece estar falando sobre ' + last + '.';
+}
+
+// Perguntas e lógicas das trilhas
+const tracks = {
+  iniciante: [
+    // Step 0: núcleo
+    {
+      prompt: 'Etapa 1 — Núcleo\nEscreva livremente sobre seu tema.',
+      response: (input) => {
+        state.trackData.inicio = input;
+        return mirror(input) + '\nEm 1–2 frases, qual é o centro disso?';
+      },
+      followUp: true
+    },
+    {
+      prompt: '', // follow-up central
+      response: (input) => {
+        state.trackData.centro = input;
+        return 'É por aqui? (s/n)';
+      },
+      followUp: false
+    },
+    {
+      prompt: '', // confirmation yes/no
+      response: (input) => {
+        return 'Ok, vamos para a próxima etapa. O que está em jogo aqui?';
+      },
+      followUp: false
+    },
+    // Step 2: atrito
+    {
+      prompt: '', // answer to question
+      response: (input) => {
+        state.trackData.atrito = input;
+        return 'Onde isso se torna mais claro?';
+      },
+      followUp: false
+    },
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.atritoEx = input;
+        return 'Traz uma situação concreta.';
+      },
+      followUp: false
+    },
+    // Step 3: exemplo
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.exemplo = input;
+        return 'Esse exemplo mostra o quê? O que ele revela sobre sua ideia?';
+      },
+      followUp: false
+    },
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.exemploReflexao = input;
+        return 'Escreva uma frase que você quer que fique.';
+      },
+      followUp: false
+    },
+    // Step 4: frase final
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.fraseFinal = input;
+        // Summary
+        const summary = 'Início: ' + state.trackData.inicio + '\nFrase final: ' + input;
+        return summary + '\nQuer ajustar (a) ou encerrar (e)?';
+      },
+      followUp: false
+    },
+    {
+      prompt: '',
+      response: (input) => {
+        if (/a/i.test(input.trim())) {
+          // restart
+          state.trackStep = 0;
+          state.trackData = {};
+          return 'Vamos ajustar. Recomeçando na etapa 1 — Núcleo.\nEscreva livremente sobre seu tema.';
+        } else {
+          return 'Obrigado por usar a IZA. Você pode reiniciar ou escolher outra trilha na tela inicial.';
+        }
+      },
+      followUp: false
+    }
+  ],
+  intermediaria: [
+    // Step 0: tema
+    {
+      prompt: 'Etapa 1 — Tema\nEm poucas palavras qual é o tema?',
+      response: (input) => {
+        state.trackData.tema = input;
+        return mirror(input) + '\nQue pergunta move esse texto?';
+      },
+      followUp: false
+    },
+    // Step 1: pergunta
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.pergunta = input;
+        return 'O que está em jogo aqui?';
+      },
+      followUp: false
+    },
+    // Step 2: atrito
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.atrito = input;
+        return 'Onde isso aparece de forma concreta?';
+      },
+      followUp: false
+    },
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.atritoEx = input;
+        return 'O que você começa a pensar sobre isso?';
+      },
+      followUp: false
+    },
+    // Step 3: meta-compreensão
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.meta = input;
+        return mirror(input) + '\nTraz um exemplo que sustente isso.';
+      },
+      followUp: false
+    },
+    // Step 4: exemplo
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.exemplo = input;
+        return 'Ele confirma ou complica sua ideia?';
+      },
+      followUp: false
+    },
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.exemploReflexao = input;
+        return 'Reúna tudo em 3 linhas.';
+      },
+      followUp: false
+    },
+    // Step 5: síntese
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.sintese = input;
+        return 'O que precisa ficar?';
+      },
+      followUp: false
+    },
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.sinteseReflexao = input;
+        return 'Escreve a versão que você levaria adiante.';
+      },
+      followUp: false
+    },
+    // Step 6: forma final
+    {
+      prompt: '',
+      response: (input) => {
+        state.trackData.formaFinal = input;
+        const summary = 'Tema: ' + state.trackData.tema + '\nPergunta: ' + state.trackData.pergunta + '\nForma final: ' + input;
+        return summary + '\nQuer continuar (c) ou encerrar (e)?';
+      },
+      followUp: false
+    },
+    {
+      prompt: '',
+      response: (input) => {
+        if (/c/i.test(input.trim())) {
+          state.trackStep = 0;
+          state.trackData = {};
+          return 'Vamos recomeçar. Etapa 1 — Tema.\nEm poucas palavras qual é o tema?';
+        } else {
+          return 'Obrigado por usar a IZA. Você pode reiniciar ou escolher outra trilha na tela inicial.';
+        }
+      },
+      followUp: false
+    }
+  ],
+  inspirada: [
+    // Step indefinite; handled separately
+  ]
+};
+
+// Run step of the current track
+function runStep() {
+  if (state.track === 'inspirada') {
+    showInspired();
+    return;
+  }
+  const steps = tracks[state.track];
+  if (state.trackStep >= steps.length) {
+    showCompletion();
+    return;
+  }
+  const step = steps[state.trackStep];
+  showInteraction(step.prompt, step.response);
+}
+
+// Generic interaction handler: show prompt, get user input, then call response
+function showInteraction(promptText, responseFn) {
+  const div = document.createElement('div');
+  div.className = 'card';
+  const promptP = document.createElement('p');
+  promptP.innerHTML = promptText.replace(/\n/g,'<br>');
+  div.appendChild(promptP);
+  const textarea = document.createElement('textarea');
+  textarea.className = 'input-area';
+  textarea.rows = 4;
+  div.appendChild(textarea);
+  const submit = document.createElement('button');
+  submit.className = 'button';
+  submit.textContent = 'Enviar';
+  submit.addEventListener('click', () => {
+    const input = textarea.value.trim();
+    if (!input) return;
+    state.conversation.push({ prompt: promptText, user: input });
+    const reply = responseFn(input);
+    state.trackStep += 1;
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'card';
+    msgDiv.innerHTML = '<div class="message">' + reply.replace(/\n/g,'<br>') + '</div>';
+    render(msgDiv);
+    setTimeout(runStep, 100);
+  });
+  div.appendChild(submit);
+  render(div);
+}
+
+// Show completion message
+function showCompletion() {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.innerHTML = '<h2>Trilha encerrada</h2><p>Você concluiu a trilha. Obrigado por escrever com a IZA!</p><button class="button" id="restart">Voltar ao início</button>';
+  div.querySelector('#restart').addEventListener('click', showWelcome);
+  render(div);
+}
+
+// Trilha inspirada (conversa aberta)
+function showInspired() {
+  const rounds = state.trackData.rounds || 0;
+  if (rounds >= 7) {
+    const first = state.trackData.entries[0] || '';
+    const last = state.trackData.entries[state.trackData.entries.length-1] || '';
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = '<h2>Modo Inspirado encerrado</h2><p>Parece que uma ideia está se formando.</p><p>Primeira escrita:<br><em>' + first + '</em></p><p>Última versão:<br><em>' + last + '</em></p><p>Isso pode ser um ponto de partida, quer salvar? (escreva sim ou não)</p>';
+    const textarea = document.createElement('textarea');
+    textarea.className = 'input-area';
+    textarea.rows = 2;
+    div.appendChild(textarea);
+    const btn = document.createElement('button');
+    btn.className = 'button';
+    btn.textContent = 'Responder';
+    btn.addEventListener('click', () => {
+      const txt = textarea.value.trim();
+      render('<div class="card"><div class="message">Obrigado por sua resposta. Você pode reiniciar ou escolher outra trilha na tela inicial.</div></div>');
+      setTimeout(showWelcome, 2000);
+    });
+    div.appendChild(btn);
+    render(div);
+    return;
+  }
+  const questions = [
+    'O que disso você quer desenvolver?',
+    'Onde isso aparece concretamente?',
+    'O que ainda está implícito?'
+  ];
+  const qIdx = rounds % questions.length;
+  const question = questions[qIdx];
+  const div = document.createElement('div');
+  div.className = 'card';
+  const p = document.createElement('p');
+  p.innerHTML = 'Escreva seu texto livremente:';
+  div.appendChild(p);
+  const textarea = document.createElement('textarea');
+  textarea.className = 'input-area';
+  textarea.rows = 4;
+  div.appendChild(textarea);
+  const btn = document.createElement('button');
+  btn.className = 'button';
+  btn.textContent = 'Enviar';
+  btn.addEventListener('click', () => {
+    const text = textarea.value.trim();
+    if (!text) return;
+    if (!state.trackData.entries) state.trackData.entries = [];
+    state.trackData.entries.push(text);
+    const mirrorText = mirror(text);
+    const response = mirrorText + '<br>' + question;
+    state.trackData.rounds = (state.trackData.rounds || 0) + 1;
+    const replyDiv = document.createElement('div');
+    replyDiv.className = 'card';
+    replyDiv.innerHTML = '<div class="message">' + response + '</div>';
+    render(replyDiv);
+    setTimeout(showInspired, 100);
+  });
+  div.appendChild(btn);
+  render(div);
+}
+
+// Inicializa o app
+showWelcome();
+</script>
+</body>
+</html>
