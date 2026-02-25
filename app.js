@@ -1,8 +1,10 @@
 // ==========================================
-// IZA no Cordel 2.0 — app.js
-// 3 trilhas + 4 presenças + híbrido (enquete)
-// Confirmação com "Opção A" (A/B/C/D) em todas as trilhas
-// Motor ELIZA-like (12 regras) + registro Apps Script
+// IZA no Cordel 2.0 — app.js (FULL FIX)
+// - 3 trilhas (Iniciante, Intermediária 7 etapas, Inspirada)
+// - 4 presenças + híbrida via enquete
+// - Confirmação Opção A (A/B/C/D) em todas as trilhas
+// - Tela final com COPIAR + BAIXAR + status de envio
+// - Botão Continuar sempre funciona
 // ==========================================
 
 const WEBAPP_URL =
@@ -15,19 +17,21 @@ const state = {
   name: "",
   email: "",
   presenceKey: null, // "A"|"B"|"C"|"D"|"H"
-  presence: null, // objeto de presença
-  presenceMix: null, // {A:0.2,B:0.6,C:0.2,D:0}
-  trackKey: null, // "iniciante"|"intermediaria"|"inspirada"
+  presence: null,
+  presenceMix: null, // {A,B,C,D} se híbrido
+  trackKey: null,
   stepIndex: 0,
   inspiredRounds: 0,
   sent: false,
   sessionId: null,
   startedAtISO: null,
   pageURL: "",
-  lastIzaText: "",
   turns: [],
-  // memoriza a classificação do "centro" em cada trilha
-  centerType: null // "pergunta"|"afirmacao"|"ferida"|"desejo"|"livre"
+  centerType: null, // "pergunta"|"afirmacao"|"ferida"|"desejo"|"livre"
+  // para tela final
+  finalDraft: "",
+  registerStatus: "idle", // idle|sending|sent|failed
+  registerError: ""
 };
 
 function newSessionId() {
@@ -76,40 +80,32 @@ const PRESENCES = {
   A: {
     key: "A",
     name: "IZA Discreta",
-    vibe: "leve",
     mirror: "short",
     maxQuestions: 1,
-    directiveLevel: 0,
     softeners: ["", "Se fizer sentido,", "Talvez,", "Ok,"],
     closings: ["", "Pode seguir.", "Quando quiser, continue."]
   },
   B: {
     key: "B",
     name: "IZA Calorosa",
-    vibe: "acolhedora",
     mirror: "short",
     maxQuestions: 1,
-    directiveLevel: 1,
     softeners: ["Entendi.", "Tô com você.", "Certo.", "Obrigado por dizer isso."],
     closings: ["Se quiser, a gente ajusta.", "Pode seguir.", "Estou aqui com você."]
   },
   C: {
     key: "C",
     name: "IZA Firme",
-    vibe: "direta",
     mirror: "medium",
     maxQuestions: 2,
-    directiveLevel: 2,
     softeners: ["Vamos focar.", "Certo.", "Ok. Vamos organizar."],
     closings: ["Responda direto.", "Vamos para a próxima.", "Siga com clareza."]
   },
   D: {
     key: "D",
     name: "IZA Minimalista",
-    vibe: "quase ausente",
     mirror: "tiny",
     maxQuestions: 1,
-    directiveLevel: 0,
     softeners: [""],
     closings: ["Continue.", "Siga.", ""]
   }
@@ -161,36 +157,33 @@ function buildHybridPresence(mix) {
   const mirror =
     (mix.C || 0) >= 0.35 ? "medium" : (mix.D || 0) >= 0.45 ? "tiny" : "short";
   const maxQuestions = (mix.C || 0) >= 0.35 ? 2 : 1;
-  const directiveLevel =
-    (mix.C || 0) >= 0.45 ? 2 : (mix.B || 0) >= 0.35 ? 1 : 0;
-
-  const softeners = [
-    ...PRESENCES.A.softeners,
-    ...PRESENCES.B.softeners,
-    ...PRESENCES.C.softeners
-  ];
-  const closings = [
-    ...PRESENCES.A.closings,
-    ...PRESENCES.B.closings,
-    ...PRESENCES.C.closings,
-    ...PRESENCES.D.closings
-  ];
 
   return {
     key: "H",
     name: "IZA Híbrida",
-    vibe: "adaptativa",
     mirror,
     maxQuestions,
-    directiveLevel,
-    softeners,
-    closings
+    softeners: [
+      ...PRESENCES.A.softeners,
+      ...PRESENCES.B.softeners,
+      ...PRESENCES.C.softeners
+    ],
+    closings: [
+      ...PRESENCES.A.closings,
+      ...PRESENCES.B.closings,
+      ...PRESENCES.C.closings,
+      ...PRESENCES.D.closings
+    ]
   };
+}
+
+function pick(arr) {
+  if (!arr || !arr.length) return "";
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 function presenceWrap(p, coreText) {
   const mix = state.presenceMix;
-
   let soft = "";
   let close = "";
 
@@ -254,19 +247,6 @@ function swapPronouns(text) {
     out = out.replaceAll(`__P${i}__`, rep);
   });
   return out;
-}
-
-function pick(arr) {
-  if (!arr || !arr.length) return "";
-  for (let tries = 0; tries < 6; tries++) {
-    const cand = arr[Math.floor(Math.random() * arr.length)];
-    if (!IZA_ENGINE.usedRecently.includes(cand)) {
-      IZA_ENGINE.usedRecently.push(cand);
-      if (IZA_ENGINE.usedRecently.length > 6) IZA_ENGINE.usedRecently.shift();
-      return cand;
-    }
-  }
-  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 function shortMirror(presence, userText) {
@@ -479,7 +459,15 @@ function izaReply(userText) {
   const t = (userText || "").trim();
   if (!t) return p.key === "D" ? "Continue." : "Pode seguir.";
 
-  const mix = state.presenceMix || { A: p.key === "A" ? 1 : 0, B: p.key === "B" ? 1 : 0, C: p.key === "C" ? 1 : 0, D: p.key === "D" ? 1 : 0 };
+  const mix =
+    state.presenceMix ||
+    {
+      A: p.key === "A" ? 1 : 0,
+      B: p.key === "B" ? 1 : 0,
+      C: p.key === "C" ? 1 : 0,
+      D: p.key === "D" ? 1 : 0
+    };
+
   const memChance = Math.min(
     0.45,
     0.12 + 0.22 * (mix.B || 0) + 0.22 * (mix.C || 0) - 0.08 * (mix.D || 0)
@@ -505,7 +493,8 @@ function izaReply(userText) {
       const extraChance = p.maxQuestions >= 2 ? 0.22 + 0.38 * (mix.C || 0) : 0;
 
       if (p.maxQuestions >= 2 && Math.random() < extraChance) {
-        const pool = d.reasmb.length > 1 ? d.reasmb.filter((x) => x !== q1) : [];
+        const pool =
+          d.reasmb.length > 1 ? d.reasmb.filter((x) => x !== q1) : [];
         const q2 = pick(pool.length ? pool : IZA_SCRIPT[IZA_SCRIPT.length - 1].decomps[0].reasmb);
         qText += "\n" + applyReasmb(q2, m);
       }
@@ -515,7 +504,7 @@ function izaReply(userText) {
         if (IZA_ENGINE.memory.length > 8) IZA_ENGINE.memory.shift();
       }
 
-      const minimalistNow = (mix.D || 0) > 0.50 && Math.random() < (mix.D || 0);
+      const minimalistNow = (mix.D || 0) > 0.5 && Math.random() < (mix.D || 0);
       const core = minimalistNow ? qText : [mirror, qText].join("\n");
       return presenceWrap(p, core);
     }
@@ -524,12 +513,11 @@ function izaReply(userText) {
   return presenceWrap(p, "Pode continuar.");
 }
 
-// -------------------- "OPÇÃO A" (A/B/C/D) PARA CONFIRMAR O CENTRO --------------------
+// -------------------- OPÇÃO A (centro) --------------------
 function centerChoicePrompt(fragment) {
   const p = state.presence || PRESENCES.A;
   const frag = swapPronouns((fragment || "").trim());
 
-  // quatro variações por presença (mantém graça/voz)
   if (p.key === "D") {
     return `“${frag}…”\nA) pergunta  B) afirmação  C) ferida  D) desejo\n(A/B/C/D ou escreva do seu jeito)`;
   }
@@ -539,7 +527,6 @@ function centerChoicePrompt(fragment) {
   if (p.key === "B") {
     return `Ao ler “${frag}…”, eu sinto um núcleo aí.\nIsso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
   }
-  // A (discreta)
   return `Quando você diz “${frag}…”, isso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
 }
 
@@ -565,10 +552,7 @@ const TRACKS = {
       {
         key: "nucleo",
         prompt: "Etapa 1 — Núcleo\nEscreva livremente sobre seu tema.",
-        onUser: (t) => {
-          // responde no estilo ELIZA + pede centro
-          return izaReply(t) + "\n\nAgora, em 1 frase: qual é o centro disso?";
-        }
+        onUser: (t) => izaReply(t) + "\n\nAgora, em 1 frase: qual é o centro disso?"
       },
       {
         key: "centro",
@@ -576,7 +560,6 @@ const TRACKS = {
         onUser: (t) => {
           state.centerType = null;
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
-          // pede classificação (Opção A)
           return centerChoicePrompt(frag);
         }
       },
@@ -586,17 +569,12 @@ const TRACKS = {
         onUser: (t) => {
           const parsed = interpretCenterChoice(t);
           state.centerType = parsed.type;
-
           const p = state.presence || PRESENCES.A;
           const lead =
-            p.key === "D"
-              ? `Ok: ${parsed.label}.`
-              : p.key === "C"
-              ? `Registrado: ${parsed.label}.`
-              : p.key === "B"
-              ? `Certo — vamos tratar o centro como ${parsed.label}.`
-              : `Ok — vamos tratar o centro como ${parsed.label}.`;
-
+            p.key === "D" ? `Ok: ${parsed.label}.` :
+            p.key === "C" ? `Registrado: ${parsed.label}.` :
+            p.key === "B" ? `Certo — vamos tratar o centro como ${parsed.label}.` :
+            `Ok — vamos tratar o centro como ${parsed.label}.`;
           return `${lead}\n\nEtapa 2 — Atrito\nO que está em jogo aqui (conflito, dúvida, desejo, risco)?`;
         }
       },
@@ -605,46 +583,25 @@ const TRACKS = {
         prompt: "Etapa 2 — Atrito\nO que está em jogo aqui?",
         onUser: (t) => {
           const hint =
-            state.centerType === "pergunta"
-              ? "Qual parte da pergunta dói mais?"
-              : state.centerType === "afirmacao"
-              ? "O que ameaça essa afirmação?"
-              : state.centerType === "ferida"
-              ? "O que encosta nessa ferida?"
-              : state.centerType === "desejo"
-              ? "O que atrapalha esse desejo?"
-              : "Qual é a tensão aqui?";
-
+            state.centerType === "pergunta" ? "Qual parte da pergunta dói mais?" :
+            state.centerType === "afirmacao" ? "O que ameaça essa afirmação?" :
+            state.centerType === "ferida" ? "O que encosta nessa ferida?" :
+            state.centerType === "desejo" ? "O que atrapalha esse desejo?" :
+            "Qual é a tensão aqui?";
           return izaReply(t) + `\n\nEtapa 3 — Cena\nTraga uma cena concreta (lugar + alguém + um gesto). (${hint})`;
         }
       },
       {
         key: "cena",
         prompt: "Etapa 3 — Cena\nTraga uma cena concreta (lugar + alguém + um gesto).",
-        onUser: (t) => {
-          return izaReply(t) + "\n\nEtapa 4 — Frase que fica\nEscreva o verso/frase que não pode faltar.";
-        }
+        onUser: (t) => izaReply(t) + "\n\nEtapa 4 — Frase que fica\nEscreva o verso/frase que não pode faltar."
       },
       {
         key: "frase_final",
         prompt: "Etapa 4 — Frase que fica\nEscreva o verso/frase que não pode faltar.",
         onUser: (t) => {
-          return izaReply(t) + "\n\nQuer ajustar (a) ou encerrar e salvar (e)?";
-        }
-      },
-      {
-        key: "fim",
-        prompt: "Ajustar (a) ou Encerrar (e)?",
-        onUser: (t) => {
-          const ans = (t || "").trim().toLowerCase();
-          if (ans.startsWith("a")) {
-            state.stepIndex = 0;
-            state.turns = [];
-            state.centerType = null;
-            return "Ok. Vamos ajustar.\n\nEtapa 1 — Núcleo\nEscreva livremente sobre seu tema.";
-          }
-          finish();
-          return "Encerrando e salvando seu registro…";
+          state.finalDraft = (t || "").trim();
+          return izaReply(t) + "\n\nFechamos. Vou preparar seu registro.";
         },
         endScreen: true
       }
@@ -657,15 +614,12 @@ const TRACKS = {
       {
         key: "tema",
         prompt: "Etapa 1 — Tema\nEm poucas palavras, qual é o tema?",
-        onUser: (t) => {
-          return izaReply(t) + "\n\nEtapa 2 — Pergunta-motriz\nQue pergunta move esse texto?";
-        }
+        onUser: (t) => izaReply(t) + "\n\nEtapa 2 — Centro (1 frase)\nQual é o centro disso em 1 frase?"
       },
       {
-        key: "pergunta_motriz",
-        prompt: "Etapa 2 — Pergunta-motriz\nQue pergunta move esse texto?",
+        key: "centro",
+        prompt: "Etapa 2 — Centro (1 frase)\nQual é o centro disso em 1 frase?",
         onUser: (t) => {
-          // aqui usamos o "Opção A" para classificar a MOTRIZ (centro conceitual)
           state.centerType = null;
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
           return centerChoicePrompt(frag);
@@ -677,79 +631,41 @@ const TRACKS = {
         onUser: (t) => {
           const parsed = interpretCenterChoice(t);
           state.centerType = parsed.type;
-
           const p = state.presence || PRESENCES.A;
           const lead =
-            p.key === "D"
-              ? `Ok: ${parsed.label}.`
-              : p.key === "C"
-              ? `Registrado: ${parsed.label}.`
-              : p.key === "B"
-              ? `Certo — tratemos isso como ${parsed.label}.`
-              : `Ok — tratemos isso como ${parsed.label}.`;
-
-          return `${lead}\n\nEtapa 3 — Atrito\nO que está em jogo aqui (conflito, regra, risco, desejo)?`;
+            p.key === "D" ? `Ok: ${parsed.label}.` :
+            p.key === "C" ? `Registrado: ${parsed.label}.` :
+            p.key === "B" ? `Certo — tratemos o centro como ${parsed.label}.` :
+            `Ok — tratemos o centro como ${parsed.label}.`;
+          return `${lead}\n\nEtapa 3 — Atrito\nO que está em jogo (conflito, regra, risco, desejo)?`;
         }
       },
       {
         key: "atrito",
-        prompt: "Etapa 3 — Atrito\nO que está em jogo aqui?",
-        onUser: (t) => {
-          return izaReply(t) + "\n\nEtapa 4 — Concreto\nOnde isso aparece de forma concreta (cena, fala, gesto, lugar)?";
-        }
+        prompt: "Etapa 3 — Atrito\nO que está em jogo?",
+        onUser: (t) => izaReply(t) + "\n\nEtapa 4 — Concreto\nTraga uma cena/fala/gesto/lugar onde isso aparece."
       },
       {
         key: "concreto",
         prompt: "Etapa 4 — Concreto\nOnde isso aparece de forma concreta?",
-        onUser: (t) => {
-          return izaReply(t) + "\n\nEtapa 5 — Meta-compreensão\nO que você começa a entender sobre isso?";
-        }
+        onUser: (t) => izaReply(t) + "\n\nEtapa 5 — Contraste\nDiga duas forças em oposição (ex.: medo × vontade)."
       },
       {
-        key: "meta",
-        prompt: "Etapa 5 — Meta-compreensão\nO que você começa a entender sobre isso?",
-        onUser: (t) => {
-          const hinge =
-            state.centerType === "pergunta"
-              ? "Se a pergunta fosse respondida, o que mudaria?"
-              : state.centerType === "afirmacao"
-              ? "O que sustenta essa afirmação?"
-              : state.centerType === "ferida"
-              ? "O que pede cuidado aqui?"
-              : state.centerType === "desejo"
-              ? "O que faz esse desejo insistir?"
-              : "Qual é a chave aqui?";
-
-          return izaReply(t) + `\n\nEtapa 6 — Síntese\nReúna tudo em 3 linhas. (${hinge})`;
-        }
+        key: "contraste",
+        prompt: "Etapa 5 — Contraste\nDuas forças em oposição:",
+        onUser: (t) => izaReply(t) + "\n\nEtapa 6 — Síntese (3 linhas)\nResuma tudo em 3 linhas."
       },
       {
         key: "sintese",
-        prompt: "Etapa 6 — Síntese\nReúna tudo em 3 linhas.",
-        onUser: (t) => {
-          return izaReply(t) + "\n\nEtapa 7 — Forma final\nEscreva a versão que você levaria adiante.";
-        }
+        prompt: "Etapa 6 — Síntese (3 linhas)\nResuma tudo em 3 linhas.",
+        onUser: (t) => izaReply(t) + "\n\nEtapa 7 — Forma final\nEscreva a versão que você levaria adiante."
       },
       {
         key: "forma_final",
         prompt: "Etapa 7 — Forma final\nEscreva a versão final.",
         onUser: (t) => {
-          return izaReply(t) + "\n\nQuer ajustar (a) ou encerrar e salvar (e)?";
-        }
-      },
-      {
-        key: "fim",
-        prompt: "Ajustar (a) ou Encerrar (e)?",
-        onUser: (t) => {
-          const ans = (t || "").trim().toLowerCase();
-          if (ans.startsWith("a")) {
-            state.stepIndex = 0;
-            state.turns = [];
-            state.centerType = null;
-            return "Ok. Vamos ajustar.\n\nEtapa 1 — Tema\nEm poucas palavras, qual é o tema?";
-          }
-          finish();
-          return "Encerrando e salvando seu registro…";
+          state.finalDraft = (t || "").trim();
+          return izaReply(t) + "\n\nFechamos. Vou preparar seu registro.";
         },
         endScreen: true
       }
@@ -762,10 +678,7 @@ const TRACKS = {
       {
         key: "abertura",
         prompt: "Sobre o que você quer escrever hoje?",
-        onUser: (t) => {
-          // primeiro turno: ELIZA + pede 1 frase centro
-          return izaReply(t) + "\n\nSe tivesse que dizer em 1 frase: qual é o centro disso?";
-        }
+        onUser: (t) => izaReply(t) + "\n\nSe tivesse que dizer em 1 frase: qual é o centro disso?"
       },
       {
         key: "centro",
@@ -782,52 +695,45 @@ const TRACKS = {
         onUser: (t) => {
           const parsed = interpretCenterChoice(t);
           state.centerType = parsed.type;
-
           const p = state.presence || PRESENCES.A;
           const lead =
-            p.key === "D"
-              ? `Ok: ${parsed.label}.`
-              : p.key === "C"
-              ? `Registrado: ${parsed.label}.`
-              : p.key === "B"
-              ? `Certo — vamos caminhar com ${parsed.label}.`
-              : `Ok — vamos caminhar com ${parsed.label}.`;
-
+            p.key === "D" ? `Ok: ${parsed.label}.` :
+            p.key === "C" ? `Registrado: ${parsed.label}.` :
+            p.key === "B" ? `Certo — vamos caminhar com ${parsed.label}.` :
+            `Ok — vamos caminhar com ${parsed.label}.`;
           return `${lead}\n\nAgora segue no fluxo: escreva mais um pouco (sem se vigiar).`;
         }
       },
-      // a partir daqui: loop “aberto” (contagem de rounds)
       {
         key: "loop",
-        prompt: "Escreva mais um pouco (quando quiser, pode encerrar).",
+        prompt: "Escreva mais um pouco. (Digite 'encerrar' quando quiser.)",
         onUser: (t) => {
           state.inspiredRounds += 1;
-          const reply = izaReply(t);
-
-          // checkpoint de encerramento após N rounds (sem quebrar fluxo)
-          if (state.inspiredRounds >= MIN_INSPIRED_ROUNDS) {
-            return (
-              reply +
-              "\n\nSe quiser, já dá pra encerrar e salvar. Ou seguimos mais uma rodada.\n" +
-              "Digite: encerrar  |  ou apenas continue escrevendo."
-            );
-          }
-          return reply;
-        }
+          return izaReply(t);
+        },
+        loop: true
       }
     ]
   }
 };
 
 // -------------------- FLOW --------------------
-function startTrack(key) {
-  state.trackKey = key;
+function resetConversationRuntime() {
   state.stepIndex = 0;
   state.inspiredRounds = 0;
   state.turns = [];
   state.centerType = null;
+  state.finalDraft = "";
+  state.sent = false;
+  state.registerStatus = "idle";
+  state.registerError = "";
   IZA_ENGINE.memory = [];
   IZA_ENGINE.usedRecently = [];
+}
+
+function startTrack(key) {
+  state.trackKey = key;
+  resetConversationRuntime();
   showStep();
 }
 
@@ -839,9 +745,9 @@ function showStep() {
     const userText = (text || "").trim();
     if (!userText) return;
 
-    // comando especial na trilha inspirada
+    // comando especial inspirada
     if (state.trackKey === "inspirada" && userText.toLowerCase().startsWith("encerrar")) {
-      finish();
+      showFinalizeScreen(); // fecha com o que tiver
       return;
     }
 
@@ -850,19 +756,22 @@ function showStep() {
     pushTurn("iza", reply);
 
     showIza(reply, () => {
-      // loop especial: "loop" não termina a trilha
-      if (state.trackKey === "inspirada" && track.steps[state.stepIndex].key === "loop") {
-        // fica no loop
+      // se for passo final, ir direto pra tela final
+      if (step.endScreen) {
+        showFinalizeScreen();
+        return;
+      }
+
+      // loop da inspirada
+      if (step.loop) {
+        // mantém no mesmo stepIndex
         showStep();
         return;
       }
 
-      // avança
       state.stepIndex++;
-
-      // se terminou a lista (não deveria), volta ao início
       if (state.stepIndex >= track.steps.length) {
-        finish();
+        showFinalizeScreen();
         return;
       }
       showStep();
@@ -893,10 +802,108 @@ function showIza(text, next) {
   window.izaNext = next;
 }
 
-// -------------------- REGISTER --------------------
+// -------------------- FINALIZE SCREEN (COPY / DOWNLOAD / SEND STATUS) --------------------
+function buildTranscript() {
+  const header =
+    `IZA no Cordel 2.0 — Registro\n` +
+    `Nome: ${state.name}\nEmail: ${state.email}\n` +
+    `Trilha: ${state.trackKey}\nPresença: ${state.presence?.name || state.presenceKey}\n` +
+    `Início: ${state.startedAtISO}\nFim: ${nowISO()}\n` +
+    `---\n\n`;
+
+  const body = state.turns
+    .map((t) => {
+      const who = t.role === "user" ? "VOCÊ" : "IZA";
+      return `${who}:\n${t.text}\n`;
+    })
+    .join("\n");
+
+  return header + body;
+}
+
+function buildFinalDraftBlock() {
+  const draft = (state.finalDraft || "").trim();
+  if (!draft) return "";
+  return `\n\n---\nTEXTO FINAL (rascunho):\n${draft}\n`;
+}
+
+function showFinalizeScreen() {
+  // dispara envio (sem travar a UI)
+  safeRegister();
+
+  const transcript = buildTranscript() + buildFinalDraftBlock();
+
+  render(`
+    <div class="card">
+      <h2>Seu registro</h2>
+
+      <p id="sendStatus" style="opacity:.85;">
+        ${renderSendStatus()}
+      </p>
+
+      <p><strong>Texto para copiar/colar</strong></p>
+      <textarea id="out" class="input-area" rows="12">${escapeHtml(transcript)}</textarea>
+
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem;">
+        <button class="button" onclick="copyOut()">Copiar</button>
+        <button class="button" onclick="downloadTxt()">Baixar .txt</button>
+        <button class="button" style="background:#a0896a;" onclick="location.reload()">Novo texto</button>
+      </div>
+
+      <p style="opacity:.7;margin-top:1rem;">
+        Se o envio por e-mail estiver configurado no seu Apps Script, você receberá uma cópia no e-mail informado.
+        Se não estiver, você já tem tudo aqui para salvar.
+      </p>
+    </div>
+  `);
+
+  window.copyOut = async function () {
+    const txt = el("out").value;
+    try {
+      await navigator.clipboard.writeText(txt);
+      alert("Copiado!");
+    } catch (e) {
+      // fallback
+      el("out").select();
+      document.execCommand("copy");
+      alert("Copiado!");
+    }
+  };
+
+  window.downloadTxt = function () {
+    const txt = el("out").value;
+    const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `IZA_${state.trackKey}_${state.sessionId}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+}
+
+function renderSendStatus() {
+  if (state.registerStatus === "sending") return "Enviando registro…";
+  if (state.registerStatus === "sent") return "Registro enviado com sucesso.";
+  if (state.registerStatus === "failed")
+    return `Falha ao enviar registro. (${state.registerError || "ver console"})`;
+  return "Preparando envio…";
+}
+
+function updateSendStatusUI() {
+  const node = document.getElementById("sendStatus");
+  if (node) node.textContent = renderSendStatus();
+}
+
+// -------------------- REGISTER (robusto) --------------------
 async function safeRegister() {
   if (state.sent) return;
   state.sent = true;
+
+  state.registerStatus = "sending";
+  updateSendStatusUI();
 
   const payload = {
     sessionId: state.sessionId,
@@ -909,33 +916,42 @@ async function safeRegister() {
     presenceName: state.presence?.name || "",
     presenceMix: state.presenceMix || null,
     trackKey: state.trackKey,
+    finalDraft: state.finalDraft || "",
     turns: state.turns
   };
 
+  // tentativa 1: JSON + header
   try {
-    await fetch(WEBAPP_URL, {
+    const r = await fetch(WEBAPP_URL, {
       method: "POST",
-      mode: "cors",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-  } catch (e) {
-    console.error("Falha ao enviar registro:", e);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    state.registerStatus = "sent";
+    updateSendStatusUI();
+    return;
+  } catch (e1) {
+    // tentativa 2: sem header (alguns GAS aceitam melhor)
+    try {
+      const r2 = await fetch(WEBAPP_URL, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      if (!r2.ok) throw new Error("HTTP " + r2.status);
+      state.registerStatus = "sent";
+      updateSendStatusUI();
+      return;
+    } catch (e2) {
+      state.registerStatus = "failed";
+      state.registerError = String(e2?.message || e1?.message || e2 || e1);
+      console.error("Falha ao enviar registro:", e1, e2);
+      updateSendStatusUI();
+    }
   }
 }
 
-function finish() {
-  safeRegister();
-  render(`
-    <div class="card">
-      <h2>Fim do Percurso</h2>
-      <p>Registro enviado para <strong>${escapeHtml(state.email)}</strong>.</p>
-      <button class="button" onclick="location.reload()">Novo Texto</button>
-    </div>
-  `);
-}
-
-// -------------------- TESTE + ESCOLHA DE PRESENÇA --------------------
+// -------------------- TESTE + PRESENÇA --------------------
 const testQuestions = [
   {
     title: "Pergunta 1",
@@ -1020,7 +1036,7 @@ function showPresenceTest() {
     <div class="card">
       <h2>Presença da IZA</h2>
       <p style="opacity:.85">
-        Você pode escolher uma presença fixa (A/B/C/D) ou fazer o teste e gerar um perfil <strong>híbrido</strong>.
+        Escolha uma presença fixa (A/B/C/D) ou faça o teste e gere um perfil <strong>híbrido</strong>.
       </p>
 
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0 1rem 0;">
@@ -1080,7 +1096,7 @@ function showPresenceResult() {
 
       <p><strong>Escolha uma trilha:</strong></p>
       <button class="button" onclick="startTrack('iniciante')">Trilha Iniciante</button>
-      <button class="button" onclick="startTrack('intermediaria')">Trilha Intermediária</button>
+      <button class="button" onclick="startTrack('intermediaria')">Trilha Intermediária (7 etapas)</button>
       <button class="button" onclick="startTrack('inspirada')">Trilha Inspirada</button>
 
       <br>
@@ -1099,15 +1115,8 @@ function showWelcome() {
   state.presence = null;
   state.presenceMix = null;
   state.trackKey = null;
-  state.stepIndex = 0;
-  state.inspiredRounds = 0;
-  state.sent = false;
-  state.lastIzaText = "";
-  state.turns = [];
-  state.centerType = null;
 
-  IZA_ENGINE.memory = [];
-  IZA_ENGINE.usedRecently = [];
+  resetConversationRuntime();
 
   render(`
     <div class="card">
@@ -1118,12 +1127,8 @@ function showWelcome() {
         ela te ajuda a <strong>pensar, organizar e aprofundar</strong> o que você já está tentando dizer.
       </p>
 
-      <p>
-        Você pode seguir uma trilha (iniciante ou intermediária) ou entrar numa conversa aberta no modo inspirado.
-      </p>
-
       <p style="opacity:.85">
-        Antes de começar, ajuste a presença da IZA (fixa A/B/C/D ou híbrida via teste rápido).
+        Antes de começar, ajuste a presença da IZA (fixa A/B/C/D ou híbrida via teste).
       </p>
 
       <input type="text" id="userName" class="input-area" placeholder="Seu nome">
