@@ -1128,7 +1128,7 @@ function showWelcome() {
       </p>
 
       <p style="opacity:.85">
-        Antes de começar, ajuste a presença da IZA (fixa A/B/C/D ou híbrida via teste).
+        Antes de começar, ajuste a presença da IZA.
       </p>
 
       <input type="text" id="userName" class="input-area" placeholder="Seu nome">
