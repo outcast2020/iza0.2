@@ -1,6 +1,8 @@
 // ==========================================
 // IZA no Cordel 2.0 — app.js
-// (com Enquete + Perfil HÍBRIDO + Motor ELIZA-like)
+// 3 trilhas + 4 presenças + híbrido (enquete)
+// Confirmação com "Opção A" (A/B/C/D) em todas as trilhas
+// Motor ELIZA-like (12 regras) + registro Apps Script
 // ==========================================
 
 const WEBAPP_URL =
@@ -12,10 +14,10 @@ const MIN_INSPIRED_ROUNDS = 7;
 const state = {
   name: "",
   email: "",
-  presenceKey: null, // "H" (híbrida) ou "A"/"B"/"C"/"D"
-  presence: null, // objeto de presença ativo (pode ser híbrido)
-  presenceMix: null, // {A:0.2,B:0.6,C:0.2,D:0} (se híbrido)
-  trackKey: null,
+  presenceKey: null, // "A"|"B"|"C"|"D"|"H"
+  presence: null, // objeto de presença
+  presenceMix: null, // {A:0.2,B:0.6,C:0.2,D:0}
+  trackKey: null, // "iniciante"|"intermediaria"|"inspirada"
   stepIndex: 0,
   inspiredRounds: 0,
   sent: false,
@@ -23,7 +25,9 @@ const state = {
   startedAtISO: null,
   pageURL: "",
   lastIzaText: "",
-  turns: []
+  turns: [],
+  // memoriza a classificação do "centro" em cada trilha
+  centerType: null // "pergunta"|"afirmacao"|"ferida"|"desejo"|"livre"
 };
 
 function newSessionId() {
@@ -67,13 +71,13 @@ function pushTurn(role, text, meta = {}) {
   });
 }
 
-// -------------------- BASE PRESENCES --------------------
+// -------------------- PRESENCES --------------------
 const PRESENCES = {
   A: {
     key: "A",
     name: "IZA Discreta",
     vibe: "leve",
-    mirror: "short", // tiny|short|medium
+    mirror: "short",
     maxQuestions: 1,
     directiveLevel: 0,
     softeners: ["", "Se fizer sentido,", "Talvez,", "Ok,"],
@@ -111,7 +115,6 @@ const PRESENCES = {
   }
 };
 
-// Mensagem de presença (inclui híbrida)
 function presenceMessage(p) {
   if (!p) return "";
   if (p.key === "H") {
@@ -121,7 +124,7 @@ function presenceMessage(p) {
       .sort((a, b) => b[1] - a[1])
       .map(([k, v]) => `${k}: ${Math.round(v * 100)}%`)
       .join(" · ");
-    return `Hoje sua IZA vai ser híbrida (${parts}). Um equilíbrio entre acolhimento, estrutura e silêncio — conforme seu jeito de escrever.`;
+    return `Hoje sua IZA será híbrida (${parts}). Um equilíbrio entre acolhimento, estrutura e silêncio — conforme seu jeito de escrever.`;
   }
   const base = {
     A: "Vou te acompanhar de forma leve, com poucas interferências.",
@@ -132,7 +135,7 @@ function presenceMessage(p) {
   return (base[p.key] || "") + " Podemos ajustar isso quando quiser.";
 }
 
-// -------------------- HYBRID PRESENCE BUILDER --------------------
+// -------------------- HYBRID PRESENCE --------------------
 function normalizeMix(counts) {
   const sum = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
   const out = {};
@@ -140,28 +143,24 @@ function normalizeMix(counts) {
   return out;
 }
 
-function weightedPick(listA, listB, listC, listD, mix) {
-  // cria um “pool” proporcional sem ficar enorme
+function weightedPick(arrA, arrB, arrC, arrD, mix) {
   const pool = [];
   const add = (arr, w) => {
     const n = Math.max(0, Math.round(w * 10));
     for (let i = 0; i < n; i++) pool.push(...arr);
   };
-  add(listA || [], mix.A || 0);
-  add(listB || [], mix.B || 0);
-  add(listC || [], mix.C || 0);
-  add(listD || [], mix.D || 0);
-  if (pool.length === 0) return "";
+  add(arrA || [], mix.A || 0);
+  add(arrB || [], mix.B || 0);
+  add(arrC || [], mix.C || 0);
+  add(arrD || [], mix.D || 0);
+  if (!pool.length) return "";
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function buildHybridPresence(mix) {
-  // Escolhe mirror e maxQuestions por “votação ponderada”
   const mirror =
-    (mix.C || 0) >= 0.35 ? "medium" : (mix.D || 0) >= 0.35 ? "tiny" : "short";
-
+    (mix.C || 0) >= 0.35 ? "medium" : (mix.D || 0) >= 0.45 ? "tiny" : "short";
   const maxQuestions = (mix.C || 0) >= 0.35 ? 2 : 1;
-
   const directiveLevel =
     (mix.C || 0) >= 0.45 ? 2 : (mix.B || 0) >= 0.35 ? 1 : 0;
 
@@ -170,7 +169,6 @@ function buildHybridPresence(mix) {
     ...PRESENCES.B.softeners,
     ...PRESENCES.C.softeners
   ];
-
   const closings = [
     ...PRESENCES.A.closings,
     ...PRESENCES.B.closings,
@@ -185,18 +183,17 @@ function buildHybridPresence(mix) {
     mirror,
     maxQuestions,
     directiveLevel,
-    // pools (a seleção final é ponderada dentro do wrapper)
     softeners,
     closings
   };
 }
 
 function presenceWrap(p, coreText) {
-  // híbrida usa mix para escolher suavizador/fechamento de forma ponderada
   const mix = state.presenceMix;
 
   let soft = "";
   let close = "";
+
   if (p.key === "H" && mix) {
     soft =
       weightedPick(
@@ -215,14 +212,14 @@ function presenceWrap(p, coreText) {
         mix
       ) || "";
   } else {
-    soft = (p.softeners || [""])[Math.floor(Math.random() * (p.softeners || [""]).length)];
-    close = (p.closings || [""])[Math.floor(Math.random() * (p.closings || [""]).length)];
+    soft = pick(p.softeners || [""]);
+    close = pick(p.closings || [""]);
   }
 
-  if ((p.key === "D") || ((p.key === "H") && (state.presenceMix?.D || 0) > 0.55)) {
-    // mais minimalista: quase sem wrapper
-    return coreText.trim();
-  }
+  const minimalNow =
+    p.key === "D" || (p.key === "H" && (state.presenceMix?.D || 0) > 0.60);
+
+  if (minimalNow) return coreText.trim();
 
   const prefix = soft ? soft + " " : "";
   const suffix = close ? "\n" + close : "";
@@ -230,12 +227,8 @@ function presenceWrap(p, coreText) {
 }
 
 // -------------------- ELIZA ENGINE --------------------
-const IZA_ENGINE = {
-  memory: [],
-  usedRecently: []
-};
+const IZA_ENGINE = { memory: [], usedRecently: [] };
 
-// pronome swap seguro (evita troca dupla)
 const pronounPairs = [
   [/\beu\b/gi, "você"],
   [/\bmim\b/gi, "você"],
@@ -264,13 +257,13 @@ function swapPronouns(text) {
 }
 
 function pick(arr) {
-  if (!arr || arr.length === 0) return "";
+  if (!arr || !arr.length) return "";
   for (let tries = 0; tries < 6; tries++) {
-    const candidate = arr[Math.floor(Math.random() * arr.length)];
-    if (!IZA_ENGINE.usedRecently.includes(candidate)) {
-      IZA_ENGINE.usedRecently.push(candidate);
+    const cand = arr[Math.floor(Math.random() * arr.length)];
+    if (!IZA_ENGINE.usedRecently.includes(cand)) {
+      IZA_ENGINE.usedRecently.push(cand);
       if (IZA_ENGINE.usedRecently.length > 6) IZA_ENGINE.usedRecently.shift();
-      return candidate;
+      return cand;
     }
   }
   return arr[Math.floor(Math.random() * arr.length)];
@@ -302,9 +295,8 @@ function applyReasmb(template, match) {
   return out;
 }
 
-// -------------------- IZA_SCRIPT (12 regras + fallback) --------------------
+// -------------------- 12 RULES --------------------
 const IZA_SCRIPT = [
-  // 1) AÇÕES
   {
     key: /\b(fazer|fiz|tentei|criei|escrevi|busco|quero)\b/i,
     decomps: [
@@ -322,8 +314,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 2) ESTADOS
   {
     key: /\b(triste|feliz|difícil|confuso|importante|belo|feio)\b/i,
     decomps: [
@@ -341,8 +331,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 3) TEMAS
   {
     key: /\b(família|casa|trabalho|rua|mundo|tempo|vida)\b/i,
     decomps: [
@@ -357,8 +345,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 4) AFETOS
   {
     key: /\b(sinto|sentir|sentimento|dor|alegria)\b/i,
     decomps: [
@@ -373,8 +359,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 5) IMPEDIMENTOS
   {
     key: /\b(não posso|não consigo|limite|bloqueio)\b/i,
     decomps: [
@@ -389,8 +373,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 6) GENERALIZAÇÕES
   {
     key: /\b(sempre|nunca|todo|ninguém|todos)\b/i,
     decomps: [
@@ -405,8 +387,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 7) INCERTEZA
   {
     key: /\b(talvez|acho|parece|quem sabe)\b/i,
     decomps: [
@@ -421,8 +401,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 8) SOBRE A IZA
   {
     key: /\b(você|iza|máquina|computador)\b/i,
     decomps: [
@@ -437,8 +415,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 9) EXPLICAÇÃO
   {
     key: /\b(porque|pois|por causa)\b/i,
     decomps: [
@@ -453,8 +429,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 10) PROJEÇÃO
   {
     key: /\b(sonho|desejo|imagino|futuro)\b/i,
     decomps: [
@@ -469,8 +443,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 11) TENSÃO
   {
     key: /\b(atrito|luta|conflito|problema)\b/i,
     decomps: [
@@ -485,8 +457,6 @@ const IZA_SCRIPT = [
       }
     ]
   },
-
-  // 12) FALLBACK
   {
     key: /(.*)/i,
     decomps: [
@@ -509,11 +479,10 @@ function izaReply(userText) {
   const t = (userText || "").trim();
   if (!t) return p.key === "D" ? "Continue." : "Pode seguir.";
 
-  // chance de usar memória (híbrida puxa mais memória se tiver B/C no mix)
-  const mix = state.presenceMix || { A: 1, B: 0, C: 0, D: 0 };
+  const mix = state.presenceMix || { A: p.key === "A" ? 1 : 0, B: p.key === "B" ? 1 : 0, C: p.key === "C" ? 1 : 0, D: p.key === "D" ? 1 : 0 };
   const memChance = Math.min(
     0.45,
-    0.15 + 0.25 * (mix.B || 0) + 0.25 * (mix.C || 0) - 0.10 * (mix.D || 0)
+    0.12 + 0.22 * (mix.B || 0) + 0.22 * (mix.C || 0) - 0.08 * (mix.D || 0)
   );
 
   if (IZA_ENGINE.memory.length > 0 && Math.random() < memChance) {
@@ -530,13 +499,10 @@ function izaReply(userText) {
       if (!m) continue;
 
       const mirror = shortMirror(p, t);
-
       const q1 = pick(d.reasmb);
       let qText = applyReasmb(q1, m);
 
-      // pergunta extra ocasional: depende do “C” na mistura (ou presença firme)
-      const extraChance =
-        p.maxQuestions >= 2 ? 0.20 + 0.40 * (mix.C || 0) : 0.0;
+      const extraChance = p.maxQuestions >= 2 ? 0.22 + 0.38 * (mix.C || 0) : 0;
 
       if (p.maxQuestions >= 2 && Math.random() < extraChance) {
         const pool = d.reasmb.length > 1 ? d.reasmb.filter((x) => x !== q1) : [];
@@ -544,21 +510,51 @@ function izaReply(userText) {
         qText += "\n" + applyReasmb(q2, m);
       }
 
-      // memória
       if (d.memory && d.memory.length) {
         IZA_ENGINE.memory.push(applyReasmb(pick(d.memory), m));
         if (IZA_ENGINE.memory.length > 8) IZA_ENGINE.memory.shift();
       }
 
-      // minimalismo ocasional: se D alto no mix, às vezes sem “espelho”
-      const minimalistNow = (mix.D || 0) > 0.45 && Math.random() < (mix.D || 0);
-
+      const minimalistNow = (mix.D || 0) > 0.50 && Math.random() < (mix.D || 0);
       const core = minimalistNow ? qText : [mirror, qText].join("\n");
       return presenceWrap(p, core);
     }
   }
 
   return presenceWrap(p, "Pode continuar.");
+}
+
+// -------------------- "OPÇÃO A" (A/B/C/D) PARA CONFIRMAR O CENTRO --------------------
+function centerChoicePrompt(fragment) {
+  const p = state.presence || PRESENCES.A;
+  const frag = swapPronouns((fragment || "").trim());
+
+  // quatro variações por presença (mantém graça/voz)
+  if (p.key === "D") {
+    return `“${frag}…”\nA) pergunta  B) afirmação  C) ferida  D) desejo\n(A/B/C/D ou escreva do seu jeito)`;
+  }
+  if (p.key === "C") {
+    return `Você disse: “${frag}…”. Classifique o núcleo:\nA) pergunta\nB) afirmação\nC) ferida\nD) desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
+  }
+  if (p.key === "B") {
+    return `Ao ler “${frag}…”, eu sinto um núcleo aí.\nIsso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
+  }
+  // A (discreta)
+  return `Quando você diz “${frag}…”, isso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
+}
+
+function interpretCenterChoice(text) {
+  const t = (text || "").trim().toLowerCase();
+  const map = { a: "pergunta", b: "afirmacao", c: "ferida", d: "desejo" };
+  const choice = map[t[0]] || null;
+  if (!choice) return { type: "livre", label: "o seu próprio modo de dizer" };
+  const labelMap = {
+    pergunta: "uma pergunta",
+    afirmacao: "uma afirmação",
+    ferida: "uma ferida",
+    desejo: "um desejo"
+  };
+  return { type: choice, label: labelMap[choice] || "o seu próprio modo de dizer" };
 }
 
 // -------------------- TRACKS --------------------
@@ -569,51 +565,72 @@ const TRACKS = {
       {
         key: "nucleo",
         prompt: "Etapa 1 — Núcleo\nEscreva livremente sobre seu tema.",
-        onUser: (t) => izaReply(t) + "\n\nEm 1 frase: qual é o centro da sua ideia?"
-      },
-      {
-        key: "centro",
-        prompt: "Qual é o centro da sua ideia (1 frase)?",
         onUser: (t) => {
-          const p = state.presence || PRESENCES.A;
-          const frag = t.split(/\s+/).slice(0, 8).join(" ");
-          const conf =
-            p.key === "C"
-              ? `Você definiu: “${swapPronouns(frag)}...”. Isso é o centro? (s/n)`
-              : p.key === "B"
-              ? `Ao ler “${swapPronouns(frag)}...”, sinto que você tocou no essencial. Seguimos por aí? (s/n)`
-              : p.key === "D"
-              ? `“${swapPronouns(frag)}...” (s/n)`
-              : `“${swapPronouns(frag)}...”. Podemos seguir por aqui? (s/n)`;
-          return conf;
+          // responde no estilo ELIZA + pede centro
+          return izaReply(t) + "\n\nAgora, em 1 frase: qual é o centro disso?";
         }
       },
       {
-        key: "confirmacao",
-        prompt: "Podemos seguir por aí? (s/n)",
+        key: "centro",
+        prompt: "Em 1 frase: qual é o centro disso?",
         onUser: (t) => {
-          const ans = (t || "").trim().toLowerCase();
-          if (ans.startsWith("n")) {
-            state.stepIndex = 0;
-            return "Tudo bem. Reescreva o Núcleo de novo: o que você quer dizer, bem simples?";
-          }
-          return "Etapa 2 — Atrito\nO que está em jogo aqui (conflito, desejo, risco, dúvida)?";
+          state.centerType = null;
+          const frag = t.split(/\s+/).slice(0, 14).join(" ");
+          // pede classificação (Opção A)
+          return centerChoicePrompt(frag);
+        }
+      },
+      {
+        key: "tipo_centro",
+        prompt: "A/B/C/D (ou escreva do seu jeito)",
+        onUser: (t) => {
+          const parsed = interpretCenterChoice(t);
+          state.centerType = parsed.type;
+
+          const p = state.presence || PRESENCES.A;
+          const lead =
+            p.key === "D"
+              ? `Ok: ${parsed.label}.`
+              : p.key === "C"
+              ? `Registrado: ${parsed.label}.`
+              : p.key === "B"
+              ? `Certo — vamos tratar o centro como ${parsed.label}.`
+              : `Ok — vamos tratar o centro como ${parsed.label}.`;
+
+          return `${lead}\n\nEtapa 2 — Atrito\nO que está em jogo aqui (conflito, dúvida, desejo, risco)?`;
         }
       },
       {
         key: "atrito",
         prompt: "Etapa 2 — Atrito\nO que está em jogo aqui?",
-        onUser: (t) => izaReply(t) + "\n\nEtapa 3 — Cena\nTraga uma cena concreta (lugar + alguém + um gesto)."
+        onUser: (t) => {
+          const hint =
+            state.centerType === "pergunta"
+              ? "Qual parte da pergunta dói mais?"
+              : state.centerType === "afirmacao"
+              ? "O que ameaça essa afirmação?"
+              : state.centerType === "ferida"
+              ? "O que encosta nessa ferida?"
+              : state.centerType === "desejo"
+              ? "O que atrapalha esse desejo?"
+              : "Qual é a tensão aqui?";
+
+          return izaReply(t) + `\n\nEtapa 3 — Cena\nTraga uma cena concreta (lugar + alguém + um gesto). (${hint})`;
+        }
       },
       {
         key: "cena",
         prompt: "Etapa 3 — Cena\nTraga uma cena concreta (lugar + alguém + um gesto).",
-        onUser: (t) => izaReply(t) + "\n\nEtapa 4 — Frase que fica\nEscreva o verso/frase que não pode faltar."
+        onUser: (t) => {
+          return izaReply(t) + "\n\nEtapa 4 — Frase que fica\nEscreva o verso/frase que não pode faltar.";
+        }
       },
       {
         key: "frase_final",
         prompt: "Etapa 4 — Frase que fica\nEscreva o verso/frase que não pode faltar.",
-        onUser: (t) => izaReply(t) + "\n\nQuer ajustar (a) ou encerrar e salvar (e)?"
+        onUser: (t) => {
+          return izaReply(t) + "\n\nQuer ajustar (a) ou encerrar e salvar (e)?";
+        }
       },
       {
         key: "fim",
@@ -623,12 +640,180 @@ const TRACKS = {
           if (ans.startsWith("a")) {
             state.stepIndex = 0;
             state.turns = [];
+            state.centerType = null;
             return "Ok. Vamos ajustar.\n\nEtapa 1 — Núcleo\nEscreva livremente sobre seu tema.";
           }
           finish();
           return "Encerrando e salvando seu registro…";
         },
         endScreen: true
+      }
+    ]
+  },
+
+  intermediaria: {
+    name: "Trilha Intermediária (7 etapas)",
+    steps: [
+      {
+        key: "tema",
+        prompt: "Etapa 1 — Tema\nEm poucas palavras, qual é o tema?",
+        onUser: (t) => {
+          return izaReply(t) + "\n\nEtapa 2 — Pergunta-motriz\nQue pergunta move esse texto?";
+        }
+      },
+      {
+        key: "pergunta_motriz",
+        prompt: "Etapa 2 — Pergunta-motriz\nQue pergunta move esse texto?",
+        onUser: (t) => {
+          // aqui usamos o "Opção A" para classificar a MOTRIZ (centro conceitual)
+          state.centerType = null;
+          const frag = t.split(/\s+/).slice(0, 14).join(" ");
+          return centerChoicePrompt(frag);
+        }
+      },
+      {
+        key: "tipo_centro",
+        prompt: "A/B/C/D (ou escreva do seu jeito)",
+        onUser: (t) => {
+          const parsed = interpretCenterChoice(t);
+          state.centerType = parsed.type;
+
+          const p = state.presence || PRESENCES.A;
+          const lead =
+            p.key === "D"
+              ? `Ok: ${parsed.label}.`
+              : p.key === "C"
+              ? `Registrado: ${parsed.label}.`
+              : p.key === "B"
+              ? `Certo — tratemos isso como ${parsed.label}.`
+              : `Ok — tratemos isso como ${parsed.label}.`;
+
+          return `${lead}\n\nEtapa 3 — Atrito\nO que está em jogo aqui (conflito, regra, risco, desejo)?`;
+        }
+      },
+      {
+        key: "atrito",
+        prompt: "Etapa 3 — Atrito\nO que está em jogo aqui?",
+        onUser: (t) => {
+          return izaReply(t) + "\n\nEtapa 4 — Concreto\nOnde isso aparece de forma concreta (cena, fala, gesto, lugar)?";
+        }
+      },
+      {
+        key: "concreto",
+        prompt: "Etapa 4 — Concreto\nOnde isso aparece de forma concreta?",
+        onUser: (t) => {
+          return izaReply(t) + "\n\nEtapa 5 — Meta-compreensão\nO que você começa a entender sobre isso?";
+        }
+      },
+      {
+        key: "meta",
+        prompt: "Etapa 5 — Meta-compreensão\nO que você começa a entender sobre isso?",
+        onUser: (t) => {
+          const hinge =
+            state.centerType === "pergunta"
+              ? "Se a pergunta fosse respondida, o que mudaria?"
+              : state.centerType === "afirmacao"
+              ? "O que sustenta essa afirmação?"
+              : state.centerType === "ferida"
+              ? "O que pede cuidado aqui?"
+              : state.centerType === "desejo"
+              ? "O que faz esse desejo insistir?"
+              : "Qual é a chave aqui?";
+
+          return izaReply(t) + `\n\nEtapa 6 — Síntese\nReúna tudo em 3 linhas. (${hinge})`;
+        }
+      },
+      {
+        key: "sintese",
+        prompt: "Etapa 6 — Síntese\nReúna tudo em 3 linhas.",
+        onUser: (t) => {
+          return izaReply(t) + "\n\nEtapa 7 — Forma final\nEscreva a versão que você levaria adiante.";
+        }
+      },
+      {
+        key: "forma_final",
+        prompt: "Etapa 7 — Forma final\nEscreva a versão final.",
+        onUser: (t) => {
+          return izaReply(t) + "\n\nQuer ajustar (a) ou encerrar e salvar (e)?";
+        }
+      },
+      {
+        key: "fim",
+        prompt: "Ajustar (a) ou Encerrar (e)?",
+        onUser: (t) => {
+          const ans = (t || "").trim().toLowerCase();
+          if (ans.startsWith("a")) {
+            state.stepIndex = 0;
+            state.turns = [];
+            state.centerType = null;
+            return "Ok. Vamos ajustar.\n\nEtapa 1 — Tema\nEm poucas palavras, qual é o tema?";
+          }
+          finish();
+          return "Encerrando e salvando seu registro…";
+        },
+        endScreen: true
+      }
+    ]
+  },
+
+  inspirada: {
+    name: "Trilha Inspirada (conversa aberta)",
+    steps: [
+      {
+        key: "abertura",
+        prompt: "Sobre o que você quer escrever hoje?",
+        onUser: (t) => {
+          // primeiro turno: ELIZA + pede 1 frase centro
+          return izaReply(t) + "\n\nSe tivesse que dizer em 1 frase: qual é o centro disso?";
+        }
+      },
+      {
+        key: "centro",
+        prompt: "Em 1 frase: qual é o centro disso?",
+        onUser: (t) => {
+          state.centerType = null;
+          const frag = t.split(/\s+/).slice(0, 14).join(" ");
+          return centerChoicePrompt(frag);
+        }
+      },
+      {
+        key: "tipo_centro",
+        prompt: "A/B/C/D (ou escreva do seu jeito)",
+        onUser: (t) => {
+          const parsed = interpretCenterChoice(t);
+          state.centerType = parsed.type;
+
+          const p = state.presence || PRESENCES.A;
+          const lead =
+            p.key === "D"
+              ? `Ok: ${parsed.label}.`
+              : p.key === "C"
+              ? `Registrado: ${parsed.label}.`
+              : p.key === "B"
+              ? `Certo — vamos caminhar com ${parsed.label}.`
+              : `Ok — vamos caminhar com ${parsed.label}.`;
+
+          return `${lead}\n\nAgora segue no fluxo: escreva mais um pouco (sem se vigiar).`;
+        }
+      },
+      // a partir daqui: loop “aberto” (contagem de rounds)
+      {
+        key: "loop",
+        prompt: "Escreva mais um pouco (quando quiser, pode encerrar).",
+        onUser: (t) => {
+          state.inspiredRounds += 1;
+          const reply = izaReply(t);
+
+          // checkpoint de encerramento após N rounds (sem quebrar fluxo)
+          if (state.inspiredRounds >= MIN_INSPIRED_ROUNDS) {
+            return (
+              reply +
+              "\n\nSe quiser, já dá pra encerrar e salvar. Ou seguimos mais uma rodada.\n" +
+              "Digite: encerrar  |  ou apenas continue escrevendo."
+            );
+          }
+          return reply;
+        }
       }
     ]
   }
@@ -640,53 +825,48 @@ function startTrack(key) {
   state.stepIndex = 0;
   state.inspiredRounds = 0;
   state.turns = [];
+  state.centerType = null;
   IZA_ENGINE.memory = [];
   IZA_ENGINE.usedRecently = [];
   showStep();
 }
 
 function showStep() {
-  if (state.trackKey === "inspirada") return showInspiredTurn(true);
-
   const track = TRACKS[state.trackKey];
   const step = track.steps[state.stepIndex];
 
   showPrompt(track.name, step.prompt, (text) => {
-    pushTurn("user", text);
-    const reply = step.onUser(text);
+    const userText = (text || "").trim();
+    if (!userText) return;
+
+    // comando especial na trilha inspirada
+    if (state.trackKey === "inspirada" && userText.toLowerCase().startsWith("encerrar")) {
+      finish();
+      return;
+    }
+
+    pushTurn("user", userText);
+    const reply = step.onUser(userText);
     pushTurn("iza", reply);
 
     showIza(reply, () => {
-      if (step.endScreen) return;
+      // loop especial: "loop" não termina a trilha
+      if (state.trackKey === "inspirada" && track.steps[state.stepIndex].key === "loop") {
+        // fica no loop
+        showStep();
+        return;
+      }
+
+      // avança
       state.stepIndex++;
+
+      // se terminou a lista (não deveria), volta ao início
+      if (state.stepIndex >= track.steps.length) {
+        finish();
+        return;
+      }
       showStep();
     });
-  });
-}
-
-function showInspiredTurn(isFirst = false) {
-  const p = state.presence || PRESENCES.A;
-
-  if (!isFirst && state.inspiredRounds >= MIN_INSPIRED_ROUNDS) {
-    render(`
-      <div class="card">
-        <h2>IZA</h2>
-        <div class="message">Quer encerrar e salvar ou seguir no fluxo?</div>
-        <button class="button" onclick="finish()">Encerrar e salvar</button>
-        <button class="button" onclick="startTrack('inspirada')">Seguir</button>
-      </div>
-    `);
-    return;
-  }
-
-  const prompt = isFirst ? "Sobre o que você quer escrever hoje?" : (p.key === "D" ? "Continue." : "Escreva mais um pouco.");
-  showPrompt("Trilha Inspirada (conversa aberta)", prompt, (text) => {
-    pushTurn("user", text, { round: state.inspiredRounds + 1 });
-    const reply = izaReply(text);
-    pushTurn("iza", reply, { round: state.inspiredRounds + 1 });
-    state.inspiredRounds++;
-
-    showIza(reply, () => showInspiredTurn(false));
   });
 }
 
@@ -755,7 +935,7 @@ function finish() {
   `);
 }
 
-// -------------------- ENQUETE + PERFIL HÍBRIDO --------------------
+// -------------------- TESTE + ESCOLHA DE PRESENÇA --------------------
 const testQuestions = [
   {
     title: "Pergunta 1",
@@ -809,6 +989,13 @@ const testQuestions = [
   }
 ];
 
+function setPresenceFixed(key) {
+  state.presenceKey = key;
+  state.presence = PRESENCES[key];
+  state.presenceMix = null;
+  showPresenceResult();
+}
+
 function showPresenceTest() {
   const blocks = testQuestions
     .map((q, i) => {
@@ -831,14 +1018,24 @@ function showPresenceTest() {
 
   render(`
     <div class="card">
-      <h2>Teste rápido de presença da IZA</h2>
+      <h2>Presença da IZA</h2>
       <p style="opacity:.85">
-        Responda 5 perguntas. A IZA vai virar um perfil <strong>híbrido</strong> (mistura do seu estilo).
+        Você pode escolher uma presença fixa (A/B/C/D) ou fazer o teste e gerar um perfil <strong>híbrido</strong>.
       </p>
 
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0 1rem 0;">
+        <button class="button" onclick="setPresenceFixed('A')">A · Discreta</button>
+        <button class="button" onclick="setPresenceFixed('B')">B · Calorosa</button>
+        <button class="button" onclick="setPresenceFixed('C')">C · Firme</button>
+        <button class="button" onclick="setPresenceFixed('D')">D · Minimalista</button>
+      </div>
+
+      <hr style="opacity:.2;margin:1rem 0;">
+
+      <h3 style="margin:.25rem 0;">Teste rápido (gera híbrida)</h3>
       ${blocks}
 
-      <button class="button" id="btnDone" disabled>Concluir</button>
+      <button class="button" id="btnDone" disabled>Concluir teste</button>
       <button class="button" style="background:#a0896a;margin-top:10px;" onclick="showWelcome()">Voltar</button>
     </div>
   `);
@@ -865,7 +1062,6 @@ function showPresenceTest() {
     answers.forEach((a) => counts[a]++);
     const mix = normalizeMix(counts);
 
-    // cria presença híbrida
     state.presenceKey = "H";
     state.presenceMix = mix;
     state.presence = buildHybridPresence(mix);
@@ -883,11 +1079,12 @@ function showPresenceResult() {
       <div class="message">${escapeHtml(presenceMessage(p))}</div>
 
       <p><strong>Escolha uma trilha:</strong></p>
-      <button class="button" onclick="startTrack('iniciante')">Trilha Iniciante (4 etapas)</button>
-      <button class="button" onclick="startTrack('inspirada')">Trilha Inspirada (conversa aberta)</button>
+      <button class="button" onclick="startTrack('iniciante')">Trilha Iniciante</button>
+      <button class="button" onclick="startTrack('intermediaria')">Trilha Intermediária</button>
+      <button class="button" onclick="startTrack('inspirada')">Trilha Inspirada</button>
 
       <br>
-      <button class="button" style="background:#a0896a;margin-top:10px;" onclick="showPresenceTest()">Refazer teste</button>
+      <button class="button" style="background:#a0896a;margin-top:10px;" onclick="showPresenceTest()">Ajustar presença</button>
     </div>
   `);
 }
@@ -907,6 +1104,8 @@ function showWelcome() {
   state.sent = false;
   state.lastIzaText = "";
   state.turns = [];
+  state.centerType = null;
+
   IZA_ENGINE.memory = [];
   IZA_ENGINE.usedRecently = [];
 
@@ -920,13 +1119,11 @@ function showWelcome() {
       </p>
 
       <p>
-        Você pode seguir uma trilha curta (rascunho → centro → atrito → cena → frase que fica)
-        ou entrar numa conversa aberta no modo inspirado.
+        Você pode seguir uma trilha (iniciante ou intermediária) ou entrar numa conversa aberta no modo inspirado.
       </p>
 
       <p style="opacity:.85">
-        Antes de começar, vamos ajustar a presença da IZA com um teste rápido (ela pode ficar mais acolhedora,
-        mais firme, mais discreta ou quase silenciosa — e também pode virar um perfil híbrido).
+        Antes de começar, ajuste a presença da IZA (fixa A/B/C/D ou híbrida via teste rápido).
       </p>
 
       <input type="text" id="userName" class="input-area" placeholder="Seu nome">
