@@ -1,10 +1,12 @@
 // ==========================================
-// IZA no Cordel 2.0 — app.js (FULL FIX)
+// IZA no Cordel 2.0 — app.js (FULL FIX + QUALITY JUMP)
 // - 3 trilhas (Iniciante, Intermediária 7 etapas, Inspirada)
 // - 4 presenças + híbrida via enquete
 // - Confirmação Opção A (A/B/C/D) em todas as trilhas
 // - Tela final com COPIAR + BAIXAR + status de envio
 // - Botão Continuar sempre funciona
+// - PATCH: empatia real, fio do centro, correção de vazios
+// - PATCH: "salto de qualidade" (C força 7 palavras quando resposta é curta)
 // ==========================================
 
 const WEBAPP_URL =
@@ -454,6 +456,197 @@ const IZA_SCRIPT = [
   }
 ];
 
+// ============================
+// PATCH: Empatia real + fio do centro + presença-aware
+// ============================
+
+// evita repetição chata de "Pode seguir"
+function presenceClosing(p) {
+  const base = {
+    A: ["", "Se quiser, continue.", ""],
+    B: ["", "Estou aqui.", "Pode seguir no seu ritmo.", ""],
+    C: ["", "Próxima.", "Siga.", ""],
+    D: ["", ""]
+  };
+  if (p.key === "H" && state.presenceMix) {
+    const mix = state.presenceMix;
+    const pickFrom =
+      (mix.D || 0) > 0.5 ? base.D :
+      (mix.C || 0) > 0.4 ? base.C :
+      (mix.B || 0) > 0.35 ? base.B : base.A;
+    return pick(pickFrom);
+  }
+  return pick(base[p.key] || [""]);
+}
+
+function centerLensLine() {
+  const p = state.presence || PRESENCES.A;
+  const ct = state.centerType;
+  if (!ct || ct === "livre") return "";
+
+  const lines = {
+    pergunta: {
+      A: ["Segure a pergunta como eixo.", "Vamos manter a pergunta viva."],
+      B: ["Essa pergunta tem vida própria. Vamos escutar o que ela pede.", "Vamos cuidar dessa pergunta sem apressar resposta."],
+      C: ["Trate isso como pergunta-motriz.", "A pergunta é o eixo. Não fuja dela."],
+      D: [""]
+    },
+    afirmacao: {
+      A: ["Sustente a afirmação com imagem.", "Deixe a afirmação ganhar corpo."],
+      B: ["Isso afirma algo importante. Vamos dar carne pra isso com uma cena.", "Vamos sustentar isso com delicadeza — e com prova concreta."],
+      C: ["Afirmação registrada. Agora prove em cena.", "Ok: agora sustente com fato/gesto."],
+      D: [""]
+    },
+    ferida: {
+      A: ["Há uma ferida aí. Vamos nomear sem dramatizar.", "Trate essa ferida com precisão."],
+      B: ["Isso toca num ponto sensível. Vamos cuidar sem anestesiar a verdade.", "Essa ferida pode virar verso — com delicadeza e precisão."],
+      C: ["Ferida registrada. Agora localize onde dói (cena).", "Ok. Delimite o gatilho e o impacto."],
+      D: [""]
+    },
+    desejo: {
+      A: ["Siga o desejo como bússola.", "Deixe o desejo guiar a forma."],
+      B: ["Isso tem pulsação. Vamos seguir o desejo sem pressa.", "Vamos caminhar com esse desejo e ver onde ele encosta."],
+      C: ["Desejo registrado. Agora identifique o obstáculo.", "Ok. Defina alvo e impedimento."],
+      D: [""]
+    }
+  };
+
+  // híbrida puxa mais humano por padrão
+  const k = p.key === "H" ? "B" : p.key;
+  const arr = (lines[ct] && (lines[ct][k] || lines[ct].A)) || [""];
+  return pick(arr);
+}
+
+function leadLine(userText) {
+  const p = state.presence || PRESENCES.A;
+  const t = (userText || "").trim();
+  if (!t) return "";
+
+  if (p.key === "D") return "";
+
+  if (p.key === "H" && state.presenceMix) {
+    const mix = state.presenceMix;
+    if ((mix.D || 0) > 0.55) return "";
+    if ((mix.C || 0) > 0.45) return pick(["Ok.", "Certo.", "Registrado."]);
+    if ((mix.B || 0) > 0.35) return pick([
+      "Eu tô aqui com você.",
+      "Obrigado por dizer isso.",
+      "Entendi — isso importa."
+    ]);
+    return pick(["Ok.", "Entendi."]);
+  }
+
+  if (p.key === "A") return pick(["Ok.", "Entendi.", "Certo."]);
+
+  if (p.key === "B") {
+    const ct = state.centerType;
+    const bank = [
+      "Obrigado por confiar isso ao texto.",
+      "Eu tô aqui com você, sem pressa.",
+      "Entendi — isso tem peso.",
+      ct === "ferida" ? "Isso toca num ponto sensível." : "",
+      ct === "desejo" ? "Isso tem pulsação." : "",
+      ct === "pergunta" ? "Essa pergunta tem força." : "",
+      ct === "afirmacao" ? "Isso afirma algo importante." : ""
+    ].filter(Boolean);
+    return pick(bank);
+  }
+
+  if (p.key === "C") return pick(["Vamos focar.", "Ok. Seja específico.", "Certo. Vamos delimitar."]);
+
+  return "";
+}
+
+function fixEmptyQuestion(qText) {
+  const hasEmptyQuotes =
+    qText.includes('“”') ||
+    qText.includes("''") ||
+    /“\s*”/.test(qText);
+
+  if (!hasEmptyQuotes) return qText;
+
+  const p = state.presence || PRESENCES.A;
+  const ct = state.centerType;
+
+  const byCenter = {
+    ferida: "O que exatamente encosta nessa ferida, hoje?",
+    desejo: "O que impede esse desejo de respirar agora?",
+    pergunta: "Qual parte dessa pergunta te puxa mais?",
+    afirmacao: "O que sustenta essa afirmação, concretamente?",
+    livre: "Pode dizer isso com um detalhe concreto (lugar, corpo, gesto)?"
+  };
+
+  const base = byCenter[ct] || byCenter.livre;
+
+  if (p.key === "C") return base.replace("hoje?", "agora?").replace("respirar", "avançar");
+  if (p.key === "D") return base.replace(/\?$/, "").trim() + "?";
+  return base;
+}
+
+function composeReply(p, userText, mirror, qText, minimalistNow) {
+  const lead = leadLine(userText);
+  const lens = centerLensLine();
+  const closing = presenceClosing(p);
+
+  if (minimalistNow || p.key === "D") {
+    return fixEmptyQuestion(qText).trim();
+  }
+
+  const parts = [];
+  if (mirror) parts.push(mirror);
+  if (lead) parts.push(lead);
+
+  if (lens) {
+    if (p.key === "A") {
+      if (Math.random() < 0.45) parts.push(lens);
+    } else {
+      parts.push(lens);
+    }
+  }
+
+  parts.push(fixEmptyQuestion(qText));
+
+  // diminui repetição de fechamento no B
+  if (closing && !(p.key === "B" && Math.random() < 0.55)) {
+    parts.push(closing);
+  }
+
+  return parts.filter(Boolean).join("\n").trim();
+}
+
+// ============================
+// PATCH: SALTO DE QUALIDADE (C força 7 palavras quando resposta é curta)
+// - Também afeta híbrida quando C tem peso alto
+// ============================
+function isTooShort(userText) {
+  const t = (userText || "").trim();
+  if (!t) return true;
+  const words = t.split(/\s+/).filter(Boolean);
+  // 1 palavra ou 2 palavras = curto demais pro motor
+  return words.length <= 2;
+}
+
+function firmNeedsExpansion(p) {
+  if (!p) return false;
+  if (p.key === "C") return true;
+  if (p.key === "H" && state.presenceMix) return (state.presenceMix.C || 0) >= 0.45;
+  return false;
+}
+
+function askSevenWordsPrompt(userText) {
+  const ct = state.centerType;
+  const base =
+    ct === "ferida" ? "Complete em 7 palavras: o que encosta nessa ferida?" :
+    ct === "desejo" ? "Complete em 7 palavras: o que impede esse desejo?" :
+    ct === "pergunta" ? "Complete em 7 palavras: qual parte da pergunta pesa?" :
+    ct === "afirmacao" ? "Complete em 7 palavras: que prova sustenta isso?" :
+    "Complete em 7 palavras com lugar/gesto: o que você quer dizer?";
+
+  // inclui o input curtíssimo como gancho
+  const hook = userText ? `Você disse: “${swapPronouns(userText)}”. ` : "";
+  return hook + base;
+}
+
 function izaReply(userText) {
   const p = state.presence || PRESENCES.A;
   const t = (userText || "").trim();
@@ -468,6 +661,15 @@ function izaReply(userText) {
       D: p.key === "D" ? 1 : 0
     };
 
+  // SALTO: se presença firme e resposta é muito curta, pede 7 palavras
+  if (firmNeedsExpansion(p) && isTooShort(t)) {
+    const mirror = shortMirror(p, t);
+    const qText = askSevenWordsPrompt(t);
+    const minimalistNow = (mix.D || 0) > 0.55 && Math.random() < (mix.D || 0);
+    const composed = composeReply(p, t, mirror, qText, minimalistNow);
+    return presenceWrap(p, composed);
+  }
+
   const memChance = Math.min(
     0.45,
     0.12 + 0.22 * (mix.B || 0) + 0.22 * (mix.C || 0) - 0.08 * (mix.D || 0)
@@ -476,7 +678,9 @@ function izaReply(userText) {
   if (IZA_ENGINE.memory.length > 0 && Math.random() < memChance) {
     const mirror = shortMirror(p, t);
     const mem = IZA_ENGINE.memory.shift();
-    return presenceWrap(p, [mirror, mem].filter(Boolean).join("\n"));
+    // passa pelo composeReply pra manter coerência de presença (sem exageros)
+    const composed = composeReply(p, t, mirror, mem, false);
+    return presenceWrap(p, composed);
   }
 
   for (const rule of IZA_SCRIPT) {
@@ -493,8 +697,7 @@ function izaReply(userText) {
       const extraChance = p.maxQuestions >= 2 ? 0.22 + 0.38 * (mix.C || 0) : 0;
 
       if (p.maxQuestions >= 2 && Math.random() < extraChance) {
-        const pool =
-          d.reasmb.length > 1 ? d.reasmb.filter((x) => x !== q1) : [];
+        const pool = d.reasmb.length > 1 ? d.reasmb.filter((x) => x !== q1) : [];
         const q2 = pick(pool.length ? pool : IZA_SCRIPT[IZA_SCRIPT.length - 1].decomps[0].reasmb);
         qText += "\n" + applyReasmb(q2, m);
       }
@@ -504,13 +707,18 @@ function izaReply(userText) {
         if (IZA_ENGINE.memory.length > 8) IZA_ENGINE.memory.shift();
       }
 
-      const minimalistNow = (mix.D || 0) > 0.5 && Math.random() < (mix.D || 0);
-      const core = minimalistNow ? qText : [mirror, qText].join("\n");
-      return presenceWrap(p, core);
+      // minimalista ocasional (especialmente D e híbrida com D alto)
+      const minimalistNow =
+        p.key === "D" ||
+        (p.key === "H" && (mix.D || 0) > 0.55 && Math.random() < (mix.D || 0)) ||
+        ((mix.D || 0) > 0.5 && Math.random() < (mix.D || 0));
+
+      const composed = composeReply(p, t, mirror, qText, minimalistNow);
+      return presenceWrap(p, composed);
     }
   }
 
-  return presenceWrap(p, "Pode continuar.");
+  return presenceWrap(p, composeReply(p, t, shortMirror(p, t), "Pode continuar.", false));
 }
 
 // -------------------- OPÇÃO A (centro) --------------------
@@ -764,7 +972,6 @@ function showStep() {
 
       // loop da inspirada
       if (step.loop) {
-        // mantém no mesmo stepIndex
         showStep();
         return;
       }
@@ -828,7 +1035,6 @@ function buildFinalDraftBlock() {
 }
 
 function showFinalizeScreen() {
-  // dispara envio (sem travar a UI)
   safeRegister();
 
   const transcript = buildTranscript() + buildFinalDraftBlock();
@@ -863,7 +1069,6 @@ function showFinalizeScreen() {
       await navigator.clipboard.writeText(txt);
       alert("Copiado!");
     } catch (e) {
-      // fallback
       el("out").select();
       document.execCommand("copy");
       alert("Copiado!");
@@ -920,7 +1125,6 @@ async function safeRegister() {
     turns: state.turns
   };
 
-  // tentativa 1: JSON + header
   try {
     const r = await fetch(WEBAPP_URL, {
       method: "POST",
@@ -932,7 +1136,6 @@ async function safeRegister() {
     updateSendStatusUI();
     return;
   } catch (e1) {
-    // tentativa 2: sem header (alguns GAS aceitam melhor)
     try {
       const r2 = await fetch(WEBAPP_URL, {
         method: "POST",
