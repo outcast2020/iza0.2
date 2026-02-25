@@ -1,3 +1,4 @@
+alert("IZA carregando...");
 // ==========================================
 // IZA no Cordel 2.0 — app.js (FULL FIX + QUALITY JUMP)
 // - 3 trilhas (Iniciante, Intermediária 7 etapas, Inspirada)
