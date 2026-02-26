@@ -258,14 +258,14 @@ function shortMirror(presence, userText) {
 
   if (presence.mirror === "tiny") {
     const w = words.slice(0, 6).join(" ");
-    return `“${swapPronouns(w)}…”`;
+    return `“${swapPronouns(w)}—”`;
   }
   if (presence.mirror === "short") {
     const w = words.slice(0, 10).join(" ");
-    return `Você está dizendo: “${swapPronouns(w)}…”.`;
+    return `Você está dizendo: “${swapPronouns(w)}—”.`;
   }
   const w = words.slice(0, 16).join(" ");
-  return `Você parece estar dizendo: “${swapPronouns(w)}…”.`;
+  return `Você parece estar dizendo: “${swapPronouns(w)}—”.`;
 }
 
 function applyReasmb(template, match) {
@@ -277,6 +277,312 @@ function applyReasmb(template, match) {
   return out;
 }
 
+function fallbackUserAnchor(userText) {
+  const t = (userText || "").trim();
+  if (!t) return "isso que você trouxe";
+  const slice = t.split(/\s+/).slice(0, 10).join(" ");
+  return swapPronouns(slice);
+}
+
+function ensureMeaningfulTemplateText(text, userText) {
+  let out = String(text || "").trim();
+  if (!out) return "";
+
+  const anchor = fallbackUserAnchor(userText);
+
+  // Corrige “vazios” do tipo “—”/aspas sem conteúdo
+  out = out
+    .replace(/“\s*—/g, `“${anchor}—`)
+    .replace(/"\s*—/g, `“${anchor}—`)
+    .replace(/\?\s*—/g, `“${anchor}—`)
+    .replace(/''/g, `“${anchor}—`)
+    .replace(/""/g, `“${anchor}—`);
+
+  const onlyPunctuation = /^[\s.,;:!?()[\]{}'"`´—-]+$/;
+  if (onlyPunctuation.test(out)) {
+    return `Falando em “${anchor}—”, o que você quer aprofundar agora?`;
+  }
+
+  return out;
+}
+
+const EXTERNAL_RULES = Array.isArray(window.IZA_RULES) ? window.IZA_RULES : [];
+
+function getExternalRulesForPresence(p, mix) {
+  if (typeof window.getIZARulesFor === "function") {
+    const rules = window.getIZARulesFor(p?.key, mix || null);
+    if (Array.isArray(rules) && rules.length) return rules;
+  }
+  return EXTERNAL_RULES;
+}
+
+function stripMd(text) {
+  return String(text || "").replace(/\*\*(.*?)\*\*/g, "$1").trim();
+}
+
+function interpolateRuleTemplate(template, match, userText) {
+  let out = stripMd(template);
+  const captures = Array.isArray(match) ? match.slice(1) : [];
+  const primary =
+    captures.find((c) => String(c || "").trim()) ||
+    (match && match[0]) ||
+    fallbackUserAnchor(userText);
+
+  out = out.replaceAll(
+    "{0}",
+    swapPronouns(String(primary || "").trim() || fallbackUserAnchor(userText))
+  );
+  for (let i = 1; i < 10; i++) {
+    const cap = swapPronouns(
+      String(
+        captures[i] ||
+          captures[i - 1] ||
+          primary ||
+          fallbackUserAnchor(userText)
+      ).trim()
+    );
+    out = out.replaceAll(`{${i}}`, cap);
+  }
+  return ensureMeaningfulTemplateText(out, userText);
+}
+
+function chooseHybridTone(mix) {
+  if (!mix) return "discreta";
+  if ((mix.D || 0) > 0.55) return "minimalista";
+  if ((mix.C || 0) > 0.42) return "firme";
+  if ((mix.B || 0) > 0.34) return "calorosa";
+  return "discreta";
+}
+
+function toneByPresence(p, mix) {
+  if (!p) return "discreta";
+  if (p.key === "H") return chooseHybridTone(mix);
+  if (p.key === "D") return "minimalista";
+  if (p.key === "C") return "firme";
+  if (p.key === "B") return "calorosa";
+  return "discreta";
+}
+
+function adaptRuleByTrack(text) {
+  const base = String(text || "").trim();
+  if (!base) return base;
+
+  if (state.trackKey === "iniciante") {
+    if (/detalhe|cena|concreto|gesto/i.test(base)) return base;
+    return base + " Traga um detalhe concreto (lugar + gesto).";
+  }
+  if (state.trackKey === "intermediaria") {
+    if (/objetiv|1-2 frases|1 frase|duas frases/i.test(base)) return base;
+    return base + " Responda de forma objetiva em 1-2 frases.";
+  }
+  if (state.trackKey === "inspirada") {
+    if (/fluxo|livre|imagem|cena/i.test(base)) return base;
+    return base + " Responda no fluxo, com imagem ou cena.";
+  }
+  return base;
+}
+
+function adaptRuleByPresence(text, p, mix) {
+  const base = String(text || "").trim();
+  if (!base) return base;
+
+  const tone = toneByPresence(p, mix);
+  if (tone === "minimalista") {
+    const short = base.split(/[.!?]/)[0].trim();
+    return (short || base).replace(/\s{2,}/g, " ") + "?";
+  }
+  if (tone === "firme") {
+    return /^(Foco|Direto|Seja|Objetivo):/i.test(base) ? base : `Direto: ${base}`;
+  }
+  if (tone === "calorosa") {
+    const prefix = pick(["Entendi. ", "Tô com você. ", "Obrigado por dividir isso. "]);
+    return prefix + base;
+  }
+  return base;
+}
+
+function pickRuleResponse(responses) {
+  const arr = Array.isArray(responses) ? responses.filter(Boolean) : [];
+  if (!arr.length) return "";
+
+  const recent = IZA_ENGINE.usedRecently || [];
+  const pool = arr.filter((r) => !recent.includes(r));
+  const chosen = pick(pool.length ? pool : arr);
+
+  IZA_ENGINE.usedRecently.push(chosen);
+  if (IZA_ENGINE.usedRecently.length > 12) IZA_ENGINE.usedRecently.shift();
+
+  return chosen;
+}
+
+function shouldBeMinimalNow(p, mix) {
+  return (
+    p.key === "D" ||
+    (p.key === "H" && (mix.D || 0) > 0.55 && Math.random() < (mix.D || 0)) ||
+    ((mix.D || 0) > 0.5 && Math.random() < (mix.D || 0))
+  );
+}
+
+const TRACK_RULE_WEIGHTS = {
+  iniciante: {
+    cena_imagem: 1.5,
+    eu_sinto: 1.25,
+    travado: 1.2,
+    nao_consigo: 1.2,
+    excesso: 1.1,
+    estrutura_texto: 0.75,
+    default: 0.55
+  },
+  intermediaria: {
+    estrutura_texto: 1.55,
+    definicao: 1.35,
+    porque: 1.3,
+    contraste: 1.25,
+    excesso: 1.2,
+    tempo: 1.15,
+    cena_imagem: 0.85,
+    default: 0.5
+  },
+  inspirada: {
+    cena_imagem: 1.6,
+    voz: 1.3,
+    eu_sinto: 1.3,
+    comparacao: 1.2,
+    pergunta: 1.15,
+    estrutura_texto: 0.7,
+    default: 0.5
+  }
+};
+
+const HYBRID_RULE_BIAS = {
+  A: {
+    boost: ["cena_imagem", "comparacao", "pergunta", "default"],
+    down: ["estrutura_texto", "definicao"]
+  },
+  B: {
+    boost: ["eu_sinto", "medo", "voz", "cuidado_diversidade", "nao_consigo", "travado"],
+    down: ["estrutura_texto", "definicao"]
+  },
+  C: {
+    boost: ["estrutura_texto", "definicao", "porque", "contraste", "excesso", "tempo"],
+    down: ["default"]
+  },
+  D: {
+    boost: ["excesso", "pergunta", "estrutura_texto"],
+    down: ["default", "cena_imagem"]
+  }
+};
+
+function hybridMixRuleWeight(ruleName, mix) {
+  if (!mix || typeof mix !== "object") return 1;
+  const safeMix = {
+    A: Number(mix.A || 0),
+    B: Number(mix.B || 0),
+    C: Number(mix.C || 0),
+    D: Number(mix.D || 0)
+  };
+
+  let multiplier = 1;
+  for (const key of ["A", "B", "C", "D"]) {
+    const w = safeMix[key];
+    if (!w) continue;
+    const bias = HYBRID_RULE_BIAS[key];
+    if (!bias) continue;
+    if (bias.boost.includes(ruleName)) multiplier += 0.45 * w;
+    if (bias.down.includes(ruleName)) multiplier -= 0.35 * w;
+  }
+
+  return Math.max(0.35, Math.min(1.9, multiplier));
+}
+
+function presenceRuleWeight(ruleName, p, mix) {
+  if (p && p.key === "H") {
+    const tone = toneByPresence(p, mix);
+    let base = 1;
+    if (tone === "minimalista") {
+      if (ruleName === "default") base = 0.45;
+      else if (ruleName === "estrutura_texto") base = 0.9;
+    } else if (tone === "firme") {
+      if (["estrutura_texto", "definicao", "porque", "contraste", "excesso", "tempo"].includes(ruleName)) base = 1.2;
+      else if (ruleName === "default") base = 0.45;
+    } else if (tone === "calorosa") {
+      if (["eu_sinto", "medo", "voz", "cuidado_diversidade", "nao_consigo", "travado"].includes(ruleName)) base = 1.2;
+      else if (ruleName === "default") base = 0.55;
+    } else if (ruleName === "default") {
+      base = 0.65;
+    }
+    return Math.max(0.2, base * hybridMixRuleWeight(ruleName, mix));
+  }
+
+  const tone = toneByPresence(p, mix);
+  if (tone === "minimalista") {
+    if (ruleName === "default") return 0.45;
+    if (ruleName === "estrutura_texto") return 0.85;
+    return 1;
+  }
+  if (tone === "firme") {
+    if (["estrutura_texto", "definicao", "porque", "contraste", "excesso", "tempo"].includes(ruleName)) return 1.3;
+    if (ruleName === "default") return 0.4;
+    return 1;
+  }
+  if (tone === "calorosa") {
+    if (["eu_sinto", "medo", "voz", "cuidado_diversidade", "nao_consigo", "travado"].includes(ruleName)) return 1.3;
+    if (ruleName === "default") return 0.5;
+    return 1;
+  }
+  if (ruleName === "default") return 0.6;
+  return 1;
+}
+
+function getRuleWeight(ruleName, p, mix, trackKey) {
+  const byTrack = (TRACK_RULE_WEIGHTS[trackKey] && TRACK_RULE_WEIGHTS[trackKey][ruleName]) || 1;
+  const byPresence = presenceRuleWeight(ruleName, p, mix);
+  return Math.max(0.01, byTrack * byPresence);
+}
+
+function pickWeightedRule(candidates, p, mix) {
+  const weighted = candidates
+    .map((item) => {
+      const w = getRuleWeight(item.rule?.name, p, mix, state.trackKey);
+      return { ...item, weight: w };
+    })
+    .filter((item) => item.weight > 0);
+
+  if (!weighted.length) return null;
+
+  const total = weighted.reduce((acc, item) => acc + item.weight, 0);
+  let r = Math.random() * total;
+  for (const item of weighted) {
+    r -= item.weight;
+    if (r <= 0) return item;
+  }
+  return weighted[weighted.length - 1];
+}
+
+function runExternalRules(userText, p, mix) {
+  const externalRules = getExternalRulesForPresence(p, mix);
+  if (!externalRules.length) return "";
+
+  const candidates = [];
+  for (const rule of externalRules) {
+    if (!rule || !(rule.pattern instanceof RegExp)) continue;
+    const m = userText.match(rule.pattern);
+    if (!m) continue;
+    candidates.push({ rule, match: m });
+  }
+
+  const chosen = pickWeightedRule(candidates, p, mix);
+  if (!chosen) return "";
+
+  const raw = pickRuleResponse(chosen.rule.responses);
+  if (!raw) return "";
+
+  let qText = interpolateRuleTemplate(raw, chosen.match, userText);
+  qText = adaptRuleByTrack(qText);
+  qText = adaptRuleByPresence(qText, p, mix);
+  return ensureMeaningfulTemplateText(qText, userText);
+}
+
 // -------------------- 12 RULES --------------------
 const IZA_SCRIPT = [
   {
@@ -285,13 +591,13 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:fiz|tentei|criei|escrevi|busco|quero)\b\s+(.*)$/i,
         reasmb: [
-          "O que motivou esse seu agir sobre “{1}”?",
-          "Ao buscar “{1}”, qual imagem surgiu primeiro?",
-          "Como essa ação — “{1}” — pode virar forma (verso, cena, confissão)?"
+          "O que motivou esse seu agir sobre “{1}—”?",
+          "Ao buscar “{1}—”, qual imagem surgiu primeiro?",
+          "Como essa ação — “{1}—” — pode virar forma (verso, cena, confissão)?"
         ],
         memory: [
-          "Voltando em “{1}”: qual foi o primeiro passo concreto?",
-          "O que você ganhou — e o que você arriscou — ao fazer “{1}”?"
+          "Voltando em “{1}—”: qual foi o primeiro passo concreto?",
+          "O que você ganhou — e o que você arriscou — ao fazer “{1}—”?"
         ]
       }
     ]
@@ -302,13 +608,13 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(triste|feliz|difícil|confuso|importante|belo|feio)\b(?:\s+(?:porque|pois)\s+)?(.*)$/i,
         reasmb: [
-          "O que torna “{2}” algo tão “{1}”?",
-          "Se “{2}” deixasse de ser “{1}”, o que sobraria?",
-          "Como esse estado de ser “{1}” aparece na sua escrita — em imagem ou ritmo?"
+          "O que torna “{2}—” algo tão “{1}—”?",
+          "Se “{2}—” deixasse de ser “{1}—”, o que sobraria?",
+          "Como esse estado de ser “{1}—” aparece na sua escrita — em imagem ou ritmo?"
         ],
         memory: [
-          "Dá um exemplo pequeno que mostre “{1}” sem explicar.",
-          "Qual palavra substituiria “{1}” sem perder a verdade?"
+          "Dá um exemplo pequeno que mostre “{1}—” sem explicar.",
+          "Qual palavra substituiria “{1}—” sem perder a verdade?"
         ]
       }
     ]
@@ -319,11 +625,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(família|casa|trabalho|rua|mundo|tempo|vida)\b(.*)$/i,
         reasmb: [
-          "Qual detalhe concreto de “{1}” você quer salvar no texto?",
-          "Como “{1}” muda o ritmo do que você escreve?",
-          "O que em “{1}” ainda está guardado e não foi dito?"
+          "Qual detalhe concreto de “{1}—” você quer salvar no texto?",
+          "Como “{1}—” muda o ritmo do que você escreve?",
+          "O que em “{1}—” ainda está guardado e não foi dito?"
         ],
-        memory: ["Volta em “{1}”: onde exatamente isso acontece (lugar/horário/pessoa)?"]
+        memory: ["Volta em “{1}—”: onde exatamente isso acontece (lugar/horário/pessoa)?"]
       }
     ]
   },
@@ -333,11 +639,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:sinto|sentir)\b\s+(.*)$/i,
         reasmb: [
-          "Onde esse sentir — “{1}” — se localiza na sua história?",
-          "Essa emoção sobre “{1}” ajuda ou trava sua autoria?",
-          "Consegue descrever “{1}” sem usar o nome do sentimento?"
+          "Onde esse sentir — “{1}—” — se localiza na sua história?",
+          "Essa emoção sobre “{1}—” ajuda ou trava sua autoria?",
+          "Consegue descrever “{1}—” sem usar o nome do sentimento?"
         ],
-        memory: ["Qual imagem carregaria “{1}” sem dizer o nome dela?"]
+        memory: ["Qual imagem carregaria “{1}—” sem dizer o nome dela?"]
       }
     ]
   },
@@ -347,11 +653,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:não consigo|não posso)\b\s+(.*)$/i,
         reasmb: [
-          "Esse limite em “{1}” é uma barreira real — ou uma precaução sua?",
-          "O que mudaria no texto se você pudesse “{1}”?",
-          "Vamos olhar o outro lado de “{1}”: o que é possível hoje, do jeito mínimo?"
+          "Esse limite em “{1}—” é uma barreira real — ou uma precaução sua?",
+          "O que mudaria no texto se você pudesse “{1}—”?",
+          "Vamos olhar o outro lado de “{1}—”: o que é possível hoje, do jeito mínimo?"
         ],
-        memory: ["Se fosse só 1% possível, como seria “{1}”?"]
+        memory: ["Se fosse só 1% possível, como seria “{1}—” ?"]
       }
     ]
   },
@@ -361,9 +667,9 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(sempre|nunca|ninguém|todos)\b(.*)$/i,
         reasmb: [
-          "O que faz “{1}” soar tão absoluto pra você aqui?",
-          "Pensa numa exceção para “{1}{2}”. Como ela soaria?",
-          "Onde esse “{1}” aparece hoje, agora, de modo concreto?"
+          "O que faz “{1}—” soar tão absoluto pra você aqui?",
+          "Pensa numa exceção para “{1}{2}—”. Como ela soaria?",
+          "Onde esse “{1}—” aparece hoje, agora, de modo concreto?"
         ],
         memory: ["Qual exceção pequena te faria respirar um pouco?"]
       }
@@ -375,11 +681,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:talvez|acho|parece|quem sabe)\b\s+(.*)$/i,
         reasmb: [
-          "Se você tivesse certeza sobre “{1}”, o texto seria o mesmo?",
-          "O que sustenta essa dúvida sobre “{1}”?",
-          "A incerteza sobre “{1}” pode virar lugar de criação?"
+          "Se você tivesse certeza sobre “{1}—”, o texto seria o mesmo?",
+          "O que sustenta essa dúvida sobre “{1}—”?",
+          "A incerteza sobre “{1}—” pode virar lugar de criação?"
         ],
-        memory: ["Qual parte de “{1}” você mais quer testar em palavras?"]
+        memory: ["Qual parte de “{1}—” você mais quer testar em palavras?"]
       }
     ]
   },
@@ -389,9 +695,9 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:você|iza|máquina|computador)\b\s*(.*)$/i,
         reasmb: [
-          "Eu estou aqui para espelhar seu pensamento. O que “{1}” revela sobre você?",
+          "Eu estou aqui para espelhar seu pensamento. O que “{1}—” revela sobre você?",
           "O que muda no seu texto quando você me usa como espelho?",
-          "Como eu posso te ajudar a deixar “{1}” mais claro em 1 frase?"
+          "Como eu posso te ajudar a deixar “{1}—” mais claro em 1 frase?"
         ],
         memory: ["Você quer mais silêncio ou mais perguntas agora?"]
       }
@@ -403,11 +709,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:porque|pois|por causa(?:\s+de)?)\b\s+(.*)$/i,
         reasmb: [
-          "Essa razão — “{1}” — é a única possível?",
-          "Se não fosse por “{1}”, que outra causa existiria?",
+          "Essa razão — “{1}—” — é a única possível?",
+          "Se não fosse por “{1}—”, que outra causa existiria?",
           "Como essa explicação muda sua voz no papel?"
         ],
-        memory: ["Você prefere explicar “{1}” ou mostrar em cena?"]
+        memory: ["Você prefere explicar “{1}—” ou mostrar em cena?"]
       }
     ]
   },
@@ -417,11 +723,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:sonho|desejo|imagino)\b\s+(.*)$/i,
         reasmb: [
-          "Qual é a cor, som ou textura desse “{1}”?",
-          "Como “{1}” projeta quem você é hoje?",
-          "O que “{1}” traz de novo para sua escrita?"
+          "Qual é a cor, som ou textura desse “{1}—”?",
+          "Como “{1}—” projeta quem você é hoje?",
+          "O que “{1}—” traz de novo para sua escrita?"
         ],
-        memory: ["Qual micro-ação hoje aproxima “{1}”?"]
+        memory: ["Qual micro-ação hoje aproxima “{1}—” ?"]
       }
     ]
   },
@@ -431,11 +737,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:atrito|luta|conflito|problema)\b\s*(.*)$/i,
         reasmb: [
-          "Qual é o coração desse “{1}”?",
-          "Esse conflito em “{1}” gera movimento ou estagnação?",
-          "O que está em risco quando você encara “{1}”?"
+          "Qual é o coração desse “{1}—”?",
+          "Esse conflito em “{1}—” gera movimento ou estagnação?",
+          "O que está em risco quando você encara “{1}—”?"
         ],
-        memory: ["Qual é o ponto de virada dentro de “{1}”?"]
+        memory: ["Qual é o ponto de virada dentro de “{1}—” ?"]
       }
     ]
   },
@@ -558,12 +864,16 @@ function leadLine(userText) {
 }
 
 function fixEmptyQuestion(qText) {
+  const normalized = String(qText || "").trim();
   const hasEmptyQuotes =
-    qText.includes('“”') ||
-    qText.includes("''") ||
-    /“\s*”/.test(qText);
+    normalized.includes("“—") ||
+    normalized.includes('""') ||
+    normalized.includes("''") ||
+    /\?\s*—/.test(normalized) ||
+    /“\s*—/.test(normalized) ||
+    /"\s*"/.test(normalized);
 
-  if (!hasEmptyQuotes) return qText;
+  if (!hasEmptyQuotes) return normalized;
 
   const p = state.presence || PRESENCES.A;
   const ct = state.centerType;
@@ -587,13 +897,15 @@ function composeReply(p, userText, mirror, qText, minimalistNow) {
   const lead = leadLine(userText);
   const lens = centerLensLine();
   const closing = presenceClosing(p);
+  const safeQuestion = ensureMeaningfulTemplateText(fixEmptyQuestion(qText), userText);
+  const safeMirror = ensureMeaningfulTemplateText(mirror, userText);
 
   if (minimalistNow || p.key === "D") {
-    return fixEmptyQuestion(qText).trim();
+    return safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, pode continuar?`;
   }
 
   const parts = [];
-  if (mirror) parts.push(mirror);
+  if (safeMirror) parts.push(safeMirror);
   if (lead) parts.push(lead);
 
   if (lens) {
@@ -604,7 +916,7 @@ function composeReply(p, userText, mirror, qText, minimalistNow) {
     }
   }
 
-  parts.push(fixEmptyQuestion(qText));
+  parts.push(safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, o que aparece agora?`);
 
   // diminui repetição de fechamento no B
   if (closing && !(p.key === "B" && Math.random() < 0.55)) {
@@ -643,7 +955,7 @@ function askSevenWordsPrompt(userText) {
     "Complete em 7 palavras com lugar/gesto: o que você quer dizer?";
 
   // inclui o input curtíssimo como gancho
-  const hook = userText ? `Você disse: “${swapPronouns(userText)}”. ` : "";
+  const hook = userText ? `Você disse: “${swapPronouns(userText)}—”. ` : "";
   return hook + base;
 }
 
@@ -667,6 +979,14 @@ function izaReply(userText) {
     const qText = askSevenWordsPrompt(t);
     const minimalistNow = (mix.D || 0) > 0.55 && Math.random() < (mix.D || 0);
     const composed = composeReply(p, t, mirror, qText, minimalistNow);
+    return presenceWrap(p, composed);
+  }
+
+  const externalQ = runExternalRules(t, p, mix);
+  if (externalQ) {
+    const mirror = shortMirror(p, t);
+    const minimalistNow = shouldBeMinimalNow(p, mix);
+    const composed = composeReply(p, t, mirror, externalQ, minimalistNow);
     return presenceWrap(p, composed);
   }
 
@@ -708,17 +1028,15 @@ function izaReply(userText) {
       }
 
       // minimalista ocasional (especialmente D e híbrida com D alto)
-      const minimalistNow =
-        p.key === "D" ||
-        (p.key === "H" && (mix.D || 0) > 0.55 && Math.random() < (mix.D || 0)) ||
-        ((mix.D || 0) > 0.5 && Math.random() < (mix.D || 0));
+      const minimalistNow = shouldBeMinimalNow(p, mix);
 
       const composed = composeReply(p, t, mirror, qText, minimalistNow);
       return presenceWrap(p, composed);
     }
   }
 
-  return presenceWrap(p, composeReply(p, t, shortMirror(p, t), "Pode continuar.", false));
+  const fallbackQ = `Falando em “${fallbackUserAnchor(t)}”, qual parte pede mais clareza agora?`;
+  return presenceWrap(p, composeReply(p, t, shortMirror(p, t), fallbackQ, false));
 }
 
 // -------------------- OPÇÃO A (centro) --------------------
@@ -727,15 +1045,15 @@ function centerChoicePrompt(fragment) {
   const frag = swapPronouns((fragment || "").trim());
 
   if (p.key === "D") {
-    return `“${frag}…”\nA) pergunta  B) afirmação  C) ferida  D) desejo\n(A/B/C/D ou escreva do seu jeito)`;
+    return `“${frag}—”\nA) pergunta  B) afirmação  C) ferida  D) desejo\n(A/B/C/D ou escreva do seu jeito)`;
   }
   if (p.key === "C") {
-    return `Você disse: “${frag}…”. Classifique o núcleo:\nA) pergunta\nB) afirmação\nC) ferida\nD) desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
+    return `Você disse: “${frag}—”. Classifique o núcleo:\nA) pergunta\nB) afirmação\nC) ferida\nD) desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
   }
   if (p.key === "B") {
-    return `Ao ler “${frag}…”, eu sinto um núcleo aí.\nIsso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
+    return `Ao ler “${frag}—”, eu sinto um núcleo aí.\nIsso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
   }
-  return `Quando você diz “${frag}…”, isso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
+  return `Quando você diz “${frag}—”, isso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
 }
 
 function interpretCenterChoice(text) {
@@ -1326,7 +1644,7 @@ function showWelcome() {
       <h2>IZA no Cordel 2.0</h2>
 
       <p>
-        IZA é uma “ancestral” de escrita: ela não escreve por você —
+        IZA é uma ancestral — de escrita: ela não escreve por você;
         ela te ajuda a <strong>pensar, organizar e aprofundar</strong> o que você já está tentando dizer.
       </p>
 
