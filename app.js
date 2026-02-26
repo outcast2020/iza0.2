@@ -1259,6 +1259,10 @@ function resetConversationRuntime() {
 
 function startTrack(key) {
   state.trackKey = key;
+
+  // UPGRADE: expõe trilha para o rules.js (track-aware)
+  window.IZA_TRACK_KEY = key;
+
   resetConversationRuntime();
   showStep();
 }
