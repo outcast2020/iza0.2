@@ -214,7 +214,7 @@ function enterViewMode() {
 function exitViewMode() {
   state.viewMode = false;
   state.viewIndex = state.viewHistory.length - 1;
-  renderFromHistory();
+  renderFromHistory(); // agora vai renderizar “ao vivo” com canSend/canContinue true
 }
 
 function canGoBack() {
@@ -268,8 +268,18 @@ function renderFromHistory() {
   const entry = state.viewHistory[state.viewIndex];
   if (!entry) return;
 
-  if (entry.type === "prompt") return renderPromptScreen(entry.payload, true);
-  if (entry.type === "iza") return renderIzaScreen(entry.payload, true);
+  const isLive = !state.viewMode && state.viewIndex === state.viewHistory.length - 1;
+
+  if (entry.type === "prompt") {
+    const payload = { ...entry.payload, canSend: isLive };
+    return renderPromptScreen(payload, true);
+  }
+
+  if (entry.type === "iza") {
+    const payload = { ...entry.payload, canContinue: isLive };
+    return renderIzaScreen(payload, true);
+  }
+
   if (entry.type === "presence") return renderPresenceResultScreen(entry.payload, true);
   if (entry.type === "presence_test") return renderPresenceTestScreen(entry.payload, true);
   if (entry.type === "welcome") return renderWelcomeScreen(entry.payload, true);
@@ -1633,7 +1643,7 @@ function showPrompt(title, question, cb) {
   const payload = {
     title,
     question,
-    canSend: !state.viewMode,
+    canSend: true, // ao vivo
     onSend: (text) => {
       const userText = (text || "").trim();
       if (!userText) return;
@@ -1641,19 +1651,22 @@ function showPrompt(title, question, cb) {
     }
   };
 
-  pushView({ type: "prompt", payload: { ...payload, canSend: false } });
-  renderPromptScreen({ ...payload, canSend: true }, false);
+  // salva o payload COMPLETO (não “capado”)
+  pushView({ type: "prompt", payload });
+
+  renderPromptScreen(payload, false);
 }
 
 function showIza(text, next) {
   const payload = {
     text,
-    canContinue: !state.viewMode,
+    canContinue: true, // ao vivo
     onContinue: () => next()
   };
 
-  pushView({ type: "iza", payload: { ...payload, canContinue: false } });
-  renderIzaScreen({ ...payload, canContinue: true }, false);
+  pushView({ type: "iza", payload });
+
+  renderIzaScreen(payload, false);
 }
 
 // -------------------- FINALIZE SCREEN (COPY / DOWNLOAD / SEND STATUS) --------------------
