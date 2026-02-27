@@ -79,6 +79,55 @@ function nowISO() {
   return new Date().toISOString();
 }
 
+// -------------------- AUTO-SAVE PERSISTENCE --------------------
+function saveStateToLocal() {
+  try {
+    const data = { state, IZA_ENGINE };
+    localStorage.setItem("izaState", JSON.stringify(data));
+  } catch (e) { }
+}
+function clearStateFromLocal() {
+  try {
+    localStorage.removeItem("izaState");
+  } catch (e) { }
+}
+function loadStateFromLocal() {
+  try {
+    const saved = localStorage.getItem("izaState");
+    return saved ? JSON.parse(saved) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function loadAndResumeSession() {
+  const saved = loadStateFromLocal();
+  if (!saved || !saved.state || !saved.state.sessionId) return false;
+
+  if (saved.state.registerFinalDone) {
+    clearStateFromLocal();
+    return false;
+  }
+
+  const wantResume = confirm("Você tem uma conversa em andamento salva. Deseja continuar de onde parou?");
+  if (!wantResume) {
+    clearStateFromLocal();
+    return false;
+  }
+
+  Object.assign(state, saved.state);
+  if (saved.IZA_ENGINE) {
+    IZA_ENGINE.memory = saved.IZA_ENGINE.memory || [];
+    IZA_ENGINE.usedRecently = saved.IZA_ENGINE.usedRecently || [];
+  }
+
+  // Restore the UI using the view history
+  if (state.viewHistory && state.viewHistory.length > 0) {
+    exitViewMode();
+    return true;
+  }
+  return false;
+}
+
 // -------------------- UI HELPERS --------------------
 function el(id) {
   return document.getElementById(id);
@@ -205,6 +254,7 @@ function pushView(entry) {
   }
   state.viewHistory.push(entry);
   state.viewIndex = state.viewHistory.length - 1;
+  saveStateToLocal();
 }
 
 function enterViewMode() {
@@ -288,8 +338,8 @@ function renderFromHistory() {
 
 // -------------------- BR UF LIST --------------------
 const BR_UFS = [
-  "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
-  "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"
+  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
+  "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"
 ];
 
 function normalizeUFOrInternational(x) {
@@ -569,9 +619,9 @@ function interpolateRuleTemplate(template, match, userText) {
     const cap = swapPronouns(
       String(
         captures[i] ||
-          captures[i - 1] ||
-          primary ||
-          fallbackUserAnchor(userText)
+        captures[i - 1] ||
+        primary ||
+        fallbackUserAnchor(userText)
       ).trim()
     );
     out = out.replaceAll(`{${i}}`, cap);
@@ -1010,8 +1060,8 @@ function presenceClosing(p) {
     const mix = state.presenceMix;
     const pickFrom =
       (mix.D || 0) > 0.5 ? base.D :
-      (mix.C || 0) > 0.4 ? base.C :
-      (mix.B || 0) > 0.35 ? base.B : base.A;
+        (mix.C || 0) > 0.4 ? base.C :
+          (mix.B || 0) > 0.35 ? base.B : base.A;
     return pick(pickFrom);
   }
   return pick(base[p.key] || [""]);
@@ -1177,10 +1227,10 @@ function askSevenWordsPrompt(userText) {
   const ct = state.centerType;
   const base =
     ct === "ferida" ? "Complete em 7 palavras: o que encosta nessa ferida?" :
-    ct === "desejo" ? "Complete em 7 palavras: o que impede esse desejo?" :
-    ct === "pergunta" ? "Complete em 7 palavras: qual parte da pergunta pesa?" :
-    ct === "afirmacao" ? "Complete em 7 palavras: que prova sustenta isso?" :
-    "Complete em 7 palavras com lugar/gesto: o que você quer dizer?";
+      ct === "desejo" ? "Complete em 7 palavras: o que impede esse desejo?" :
+        ct === "pergunta" ? "Complete em 7 palavras: qual parte da pergunta pesa?" :
+          ct === "afirmacao" ? "Complete em 7 palavras: que prova sustenta isso?" :
+            "Complete em 7 palavras com lugar/gesto: o que você quer dizer?";
 
   const hook = userText ? `Você disse: “${swapPronouns(userText)}—”. ` : "";
   return hook + base;
@@ -1322,9 +1372,9 @@ const TRACKS = {
           const p = state.presence || PRESENCES.A;
           const lead =
             p.key === "D" ? `Ok: ${parsed.label}.` :
-            p.key === "C" ? `Registrado: ${parsed.label}.` :
-            p.key === "B" ? `Certo — vamos tratar o centro como ${parsed.label}.` :
-            `Ok — vamos tratar o centro como ${parsed.label}.`;
+              p.key === "C" ? `Registrado: ${parsed.label}.` :
+                p.key === "B" ? `Certo — vamos tratar o centro como ${parsed.label}.` :
+                  `Ok — vamos tratar o centro como ${parsed.label}.`;
           return `${lead}\n\nEtapa 2 — Atrito\nO que está em jogo aqui (conflito, dúvida, desejo, risco)?`;
         }
       },
@@ -1334,10 +1384,10 @@ const TRACKS = {
         onUser: (t) => {
           const hint =
             state.centerType === "pergunta" ? "Qual parte da pergunta dói mais?" :
-            state.centerType === "afirmacao" ? "O que ameaça essa afirmação?" :
-            state.centerType === "ferida" ? "O que encosta nessa ferida?" :
-            state.centerType === "desejo" ? "O que atrapalha esse desejo?" :
-            "Qual é a tensão aqui?";
+              state.centerType === "afirmacao" ? "O que ameaça essa afirmação?" :
+                state.centerType === "ferida" ? "O que encosta nessa ferida?" :
+                  state.centerType === "desejo" ? "O que atrapalha esse desejo?" :
+                    "Qual é a tensão aqui?";
           return izaReply(t) + `\n\nEtapa 3 — Cena\nTraga uma cena concreta (lugar + alguém + um gesto). (${hint})`;
         }
       },
@@ -1384,9 +1434,9 @@ const TRACKS = {
           const p = state.presence || PRESENCES.A;
           const lead =
             p.key === "D" ? `Ok: ${parsed.label}.` :
-            p.key === "C" ? `Registrado: ${parsed.label}.` :
-            p.key === "B" ? `Certo — tratemos o centro como ${parsed.label}.` :
-            `Ok — tratemos o centro como ${parsed.label}.`;
+              p.key === "C" ? `Registrado: ${parsed.label}.` :
+                p.key === "B" ? `Certo — tratemos o centro como ${parsed.label}.` :
+                  `Ok — tratemos o centro como ${parsed.label}.`;
           return `${lead}\n\nEtapa 3 — Atrito\nO que está em jogo (conflito, regra, risco, desejo)?`;
         }
       },
@@ -1448,9 +1498,9 @@ const TRACKS = {
           const p = state.presence || PRESENCES.A;
           const lead =
             p.key === "D" ? `Ok: ${parsed.label}.` :
-            p.key === "C" ? `Registrado: ${parsed.label}.` :
-            p.key === "B" ? `Certo — vamos caminhar com ${parsed.label}.` :
-            `Ok — vamos caminhar com ${parsed.label}.`;
+              p.key === "C" ? `Registrado: ${parsed.label}.` :
+                p.key === "B" ? `Certo — vamos caminhar com ${parsed.label}.` :
+                  `Ok — vamos caminhar com ${parsed.label}.`;
           return `${lead}\n\nAgora segue no fluxo: escreva mais um pouco (sem se vigiar).`;
         }
       },
@@ -1572,10 +1622,9 @@ function renderPromptScreen(payload, fromHistory = false) {
 
       <textarea id="txt" class="input-area" rows="5" ${canSend ? "" : "disabled"} placeholder="${canSend ? "" : "Resposta já enviada (não exibida)"}"></textarea>
 
-      ${
-        canSend
-          ? `<button id="btnSend" class="button">Enviar</button>`
-          : `<div class="iza-hint">Você está revisando uma etapa anterior. O texto que foi enviado não aparece aqui.</div>`
+      ${canSend
+        ? `<button id="btnSend" class="button">Enviar</button>`
+        : `<div class="iza-hint">Você está revisando uma etapa anterior. O texto que foi enviado não aparece aqui.</div>`
       }
 
       ${renderHistoryNav("")}
@@ -1621,10 +1670,9 @@ function renderIzaScreen(payload, fromHistory = false) {
         ${escapeHtml(text).replace(/\n/g, "<br>")}
       </div>
 
-      ${
-        canContinue
-          ? `<button class="button" id="btnNext">Continuar</button>`
-          : `<div class="iza-hint">Você está revisando uma fala anterior.</div>`
+      ${canContinue
+        ? `<button class="button" id="btnNext">Continuar</button>`
+        : `<div class="iza-hint">Você está revisando uma fala anterior.</div>`
       }
 
       ${renderHistoryNav("")}
@@ -1806,20 +1854,22 @@ function buildRegisterBasePayload(stage) {
 
 async function postJsonRobust(payload) {
   try {
-    const r = await fetch(WEBAPP_URL, {
+    await fetch(WEBAPP_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      mode: "no-cors", // Crucial for Google Apps Script to avoid CORS errors
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload)
     });
-    if (!r.ok) throw new Error("HTTP " + r.status);
+    // In no-cors mode, the response is opaque, so we can't check r.ok
+    // We assume success if the network request didn't throw an error.
     return true;
   } catch (e1) {
     try {
-      const r2 = await fetch(WEBAPP_URL, {
+      await fetch(WEBAPP_URL, {
         method: "POST",
+        mode: "no-cors",
         body: JSON.stringify(payload)
       });
-      if (!r2.ok) throw new Error("HTTP " + r2.status);
       return true;
     } catch (e2) {
       console.error("Falha ao enviar:", e1, e2, payload);
@@ -2185,5 +2235,7 @@ window.validateStart = function () {
 // init
 document.addEventListener("DOMContentLoaded", () => {
   ensureBaseStyles();
-  showWelcome();
+  if (!loadAndResumeSession()) {
+    showWelcome();
+  }
 });
