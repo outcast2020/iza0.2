@@ -1,5 +1,5 @@
 // ==========================================
-// IZA no Cordel 2.0 — app.js (FULL FIX + QUALITY JUMP)
+// IZA no Cordel 2.0 — app.js (FULL FIX + QUALITY JUMP + UX PATCHES)
 // - 3 trilhas (Iniciante, Intermediária 7 etapas, Inspirada)
 // - 4 presenças + híbrida via enquete
 // - Confirmação Opção A (A/B/C/D) em todas as trilhas
@@ -7,6 +7,15 @@
 // - Botão Continuar sempre funciona
 // - PATCH: empatia real, fio do centro, correção de vazios
 // - PATCH: "salto de qualidade" (C força 7 palavras quando resposta é curta)
+//
+// UX PATCHES (AGORA):
+// - Cabeçalho mostra nome humano (IZA Calorosa / IZA Firme / etc) + nome do participante
+// - Barra de progresso (iniciante/intermediaria) + indicador na inspirada
+// - Navegação Voltar/Avançar para REVER o prompt anterior (sem mostrar texto do usuário)
+// - Transição com micro-delay + fade (menos instantâneo)
+//
+// OBS (pedido do Carlos):
+// - Voltar NÃO permite editar nem ver o texto do usuário; é só para rever a última tela/prompt.
 // ==========================================
 
 const WEBAPP_URL =
@@ -33,7 +42,14 @@ const state = {
   // para tela final
   finalDraft: "",
   registerStatus: "idle", // idle|sending|sent|failed
-  registerError: ""
+  registerError: "",
+
+  // UX: histórico de telas (para voltar/avançar só para VER)
+  viewHistory: [], // [{type:'prompt'|'iza'|'final'|'presence'|'welcome', payload:{...}}]
+  viewIndex: -1,
+  viewMode: false,
+  stepLocked: false,
+  transitionMs: 220
 };
 
 function newSessionId() {
@@ -75,6 +91,192 @@ function pushTurn(role, text, meta = {}) {
       ...meta
     }
   });
+}
+
+// -------------------- UX PATCH HELPERS --------------------
+function ensureBaseStyles() {
+  if (document.getElementById("izaUxStyles")) return;
+  const style = document.createElement("style");
+  style.id = "izaUxStyles";
+  style.textContent = `
+    .iza-fade { opacity: 0; transform: translateY(2px); transition: opacity .18s ease, transform .18s ease; }
+    .iza-fade.is-in { opacity: 1; transform: translateY(0); }
+    .iza-top { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+    .iza-sub { opacity:.75; font-size:.92rem; margin-top:.15rem; }
+    .iza-progress { height:8px; background: rgba(0,0,0,.08); border-radius:999px; overflow:hidden; margin:.65rem 0 0 0; }
+    .iza-progress > div { height:100%; width:0%; background: rgba(0,0,0,.35); border-radius:999px; transition: width .22s ease; }
+    .iza-nav { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.75rem; }
+    .button.secondary { background: rgba(0,0,0,.10); color: inherit; }
+    .button:disabled { opacity:.55; cursor:not-allowed; }
+    .iza-hint { opacity:.7; font-size:.9rem; margin-top:.5rem; }
+    .iza-chip { display:inline-block; padding:.15rem .5rem; border-radius:999px; background: rgba(0,0,0,.08); font-size:.82rem; opacity:.9; }
+  `;
+  document.head.appendChild(style);
+}
+
+function firstName(full) {
+  const t = String(full || "").trim();
+  if (!t) return "";
+  return t.split(/\s+/)[0];
+}
+
+function izaDisplayName() {
+  if (state.presence?.name) return state.presence.name; // "IZA Calorosa" etc.
+  return "IZA";
+}
+
+function userDisplayName() {
+  const fn = firstName(state.name);
+  return fn ? fn : "Você";
+}
+
+function trackTotalSteps(trackKey) {
+  const t = TRACKS[trackKey];
+  if (!t) return 1;
+  return (t.steps || []).length;
+}
+
+function progressPct(trackKey, stepIndex) {
+  if (trackKey === "inspirada") return null; // conversa aberta
+  const total = trackTotalSteps(trackKey);
+  const current = Math.min(total, Math.max(1, stepIndex + 1));
+  return Math.round((current / total) * 100);
+}
+
+function progressLabel(trackKey, stepIndex) {
+  if (trackKey === "inspirada") {
+    const r = Math.max(0, state.inspiredRounds || 0);
+    return r ? `Rodada ${r}` : "Conversa aberta";
+  }
+  const total = trackTotalSteps(trackKey);
+  return `Etapa ${Math.min(total, stepIndex + 1)} de ${total}`;
+}
+
+function renderCardShell(innerHtml) {
+  return `<div class="card iza-fade" id="izaView">${innerHtml}</div>`;
+}
+
+function mountFadeIn() {
+  const node = document.getElementById("izaView");
+  if (!node) return;
+  requestAnimationFrame(() => node.classList.add("is-in"));
+}
+
+function safeTransition(nextFn) {
+  if (state.stepLocked) return;
+  state.stepLocked = true;
+
+  const node = document.getElementById("izaView");
+  if (node) node.classList.remove("is-in");
+
+  setTimeout(() => {
+    try {
+      nextFn();
+    } finally {
+      state.stepLocked = false;
+      setTimeout(mountFadeIn, 0);
+    }
+  }, state.transitionMs);
+}
+
+// ---------- VIEW HISTORY (Voltar/Avançar para VER) ----------
+function pushView(entry) {
+  // se o usuário estava no meio do "replay", cortar o futuro ao registrar uma nova tela viva
+  if (state.viewIndex < state.viewHistory.length - 1) {
+    state.viewHistory = state.viewHistory.slice(0, state.viewIndex + 1);
+  }
+  state.viewHistory.push(entry);
+  state.viewIndex = state.viewHistory.length - 1;
+}
+
+function enterViewMode() {
+  state.viewMode = true;
+}
+
+function exitViewMode() {
+  state.viewMode = false;
+  // sempre volta para a última tela viva
+  state.viewIndex = state.viewHistory.length - 1;
+  renderFromHistory();
+}
+
+function canGoBack() {
+  return state.viewHistory.length > 0 && state.viewIndex > 0;
+}
+
+function canGoForward() {
+  return state.viewHistory.length > 0 && state.viewIndex < state.viewHistory.length - 1;
+}
+
+function goBackView() {
+  if (!canGoBack()) return;
+  enterViewMode();
+  state.viewIndex -= 1;
+  renderFromHistory();
+}
+
+function goForwardView() {
+  if (!canGoForward()) return;
+  state.viewIndex += 1;
+  // se chegou no fim, sai do modo de revisão automaticamente
+  if (state.viewIndex === state.viewHistory.length - 1) state.viewMode = false;
+  renderFromHistory();
+}
+
+function renderHistoryNav(extraHtml = "") {
+  const backDisabled = canGoBack() ? "" : "disabled";
+  const fwdDisabled = canGoForward() ? "" : "disabled";
+  const replayTag = state.viewMode ? `<span class="iza-chip">Revisão</span>` : "";
+  return `
+    <div class="iza-nav">
+      <button class="button secondary" id="btnHistBack" ${backDisabled}>Voltar</button>
+      <button class="button secondary" id="btnHistFwd" ${fwdDisabled}>Avançar</button>
+      ${state.viewMode ? `<button class="button" id="btnHistLive">Retomar</button>` : ""}
+      ${extraHtml || ""}
+      <div style="margin-left:auto;align-self:center;">${replayTag}</div>
+    </div>
+  `;
+}
+
+function bindHistoryNavHandlers() {
+  const b1 = document.getElementById("btnHistBack");
+  const b2 = document.getElementById("btnHistFwd");
+  const b3 = document.getElementById("btnHistLive");
+
+  if (b1) b1.onclick = () => safeTransition(goBackView);
+  if (b2) b2.onclick = () => safeTransition(goForwardView);
+  if (b3) b3.onclick = () => safeTransition(exitViewMode);
+}
+
+function renderFromHistory() {
+  const entry = state.viewHistory[state.viewIndex];
+  if (!entry) return;
+
+  // Despacha por tipo de tela
+  if (entry.type === "prompt") {
+    renderPromptScreen(entry.payload, /*fromHistory*/ true);
+    return;
+  }
+  if (entry.type === "iza") {
+    renderIzaScreen(entry.payload, /*fromHistory*/ true);
+    return;
+  }
+  if (entry.type === "presence") {
+    renderPresenceResultScreen(entry.payload, /*fromHistory*/ true);
+    return;
+  }
+  if (entry.type === "presence_test") {
+    renderPresenceTestScreen(entry.payload, /*fromHistory*/ true);
+    return;
+  }
+  if (entry.type === "welcome") {
+    renderWelcomeScreen(entry.payload, /*fromHistory*/ true);
+    return;
+  }
+  if (entry.type === "final") {
+    renderFinalScreen(entry.payload, /*fromHistory*/ true);
+    return;
+  }
 }
 
 // -------------------- PRESENCES --------------------
@@ -766,7 +968,6 @@ const IZA_SCRIPT = [
 // PATCH: Empatia real + fio do centro + presença-aware
 // ============================
 
-// evita repetição chata de "Pode seguir"
 function presenceClosing(p) {
   const base = {
     A: ["", "Se quiser, continue.", ""],
@@ -817,7 +1018,6 @@ function centerLensLine() {
     }
   };
 
-  // híbrida puxa mais humano por padrão
   const k = p.key === "H" ? "B" : p.key;
   const arr = (lines[ct] && (lines[ct][k] || lines[ct].A)) || [""];
   return pick(arr);
@@ -918,7 +1118,6 @@ function composeReply(p, userText, mirror, qText, minimalistNow) {
 
   parts.push(safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, o que aparece agora?`);
 
-  // diminui repetição de fechamento no B
   if (closing && !(p.key === "B" && Math.random() < 0.55)) {
     parts.push(closing);
   }
@@ -928,13 +1127,11 @@ function composeReply(p, userText, mirror, qText, minimalistNow) {
 
 // ============================
 // PATCH: SALTO DE QUALIDADE (C força 7 palavras quando resposta é curta)
-// - Também afeta híbrida quando C tem peso alto
 // ============================
 function isTooShort(userText) {
   const t = (userText || "").trim();
   if (!t) return true;
   const words = t.split(/\s+/).filter(Boolean);
-  // 1 palavra ou 2 palavras = curto demais pro motor
   return words.length <= 2;
 }
 
@@ -954,7 +1151,6 @@ function askSevenWordsPrompt(userText) {
     ct === "afirmacao" ? "Complete em 7 palavras: que prova sustenta isso?" :
     "Complete em 7 palavras com lugar/gesto: o que você quer dizer?";
 
-  // inclui o input curtíssimo como gancho
   const hook = userText ? `Você disse: “${swapPronouns(userText)}—”. ` : "";
   return hook + base;
 }
@@ -973,7 +1169,6 @@ function izaReply(userText) {
       D: p.key === "D" ? 1 : 0
     };
 
-  // SALTO: se presença firme e resposta é muito curta, pede 7 palavras
   if (firmNeedsExpansion(p) && isTooShort(t)) {
     const mirror = shortMirror(p, t);
     const qText = askSevenWordsPrompt(t);
@@ -998,7 +1193,6 @@ function izaReply(userText) {
   if (IZA_ENGINE.memory.length > 0 && Math.random() < memChance) {
     const mirror = shortMirror(p, t);
     const mem = IZA_ENGINE.memory.shift();
-    // passa pelo composeReply pra manter coerência de presença (sem exageros)
     const composed = composeReply(p, t, mirror, mem, false);
     return presenceWrap(p, composed);
   }
@@ -1027,7 +1221,6 @@ function izaReply(userText) {
         if (IZA_ENGINE.memory.length > 8) IZA_ENGINE.memory.shift();
       }
 
-      // minimalista ocasional (especialmente D e híbrida com D alto)
       const minimalistNow = shouldBeMinimalNow(p, mix);
 
       const composed = composeReply(p, t, mirror, qText, minimalistNow);
@@ -1255,13 +1448,18 @@ function resetConversationRuntime() {
   state.registerError = "";
   IZA_ENGINE.memory = [];
   IZA_ENGINE.usedRecently = [];
+
+  // reset histórico de telas da conversa (vai ser reconstituído)
+  state.viewHistory = [];
+  state.viewIndex = -1;
+  state.viewMode = false;
 }
 
 function startTrack(key) {
   state.trackKey = key;
 
-  // UPGRADE: expõe trilha para o rules.js (track-aware)
-  window.IZA_TRACK_KEY = null;
+  // expõe trilha para rules.js (track-aware)
+  window.IZA_TRACK_KEY = key;
 
   resetConversationRuntime();
   showStep();
@@ -1286,13 +1484,11 @@ function showStep() {
     pushTurn("iza", reply);
 
     showIza(reply, () => {
-      // se for passo final, ir direto pra tela final
       if (step.endScreen) {
         showFinalizeScreen();
         return;
       }
 
-      // loop da inspirada
       if (step.loop) {
         showStep();
         return;
@@ -1308,27 +1504,133 @@ function showStep() {
   });
 }
 
+// -------------------- SCREENS (render + history) --------------------
+function renderPromptScreen(payload, fromHistory = false) {
+  const { title, question, canSend } = payload;
+
+  const pct = progressPct(state.trackKey, state.stepIndex);
+  const progHtml =
+    pct === null
+      ? `<div class="iza-sub">${escapeHtml(progressLabel(state.trackKey, state.stepIndex))}</div>`
+      : `
+        <div class="iza-sub">${escapeHtml(progressLabel(state.trackKey, state.stepIndex))}</div>
+        <div class="iza-progress" aria-label="Progresso">
+          <div style="width:${pct}%"></div>
+        </div>
+      `;
+
+  render(
+    renderCardShell(`
+      <div class="iza-top">
+        <div>
+          <h2 style="margin:0;">${escapeHtml(title)}</h2>
+          ${progHtml}
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:700;">${escapeHtml(userDisplayName())}</div>
+          <div class="iza-sub">${escapeHtml(izaDisplayName())}</div>
+        </div>
+      </div>
+
+      <p style="margin-top:1rem;">${escapeHtml(question).replace(/\n/g, "<br>")}</p>
+
+      <textarea id="txt" class="input-area" rows="5" ${canSend ? "" : "disabled"} placeholder="${canSend ? "" : "Resposta já enviada (não exibida)"}"></textarea>
+
+      ${
+        canSend
+          ? `<button id="btnSend" class="button">Enviar</button>`
+          : `<div class="iza-hint">Você está revisando uma etapa anterior. O texto que foi enviado não aparece aqui.</div>`
+      }
+
+      ${renderHistoryNav("")}
+    `)
+  );
+
+  mountFadeIn();
+  bindHistoryNavHandlers();
+
+  if (canSend) {
+    el("btnSend").onclick = () => payload.onSend && payload.onSend(el("txt").value.trim());
+  }
+}
+
+function renderIzaScreen(payload, fromHistory = false) {
+  const { text, canContinue, onContinue } = payload;
+
+  const pct = progressPct(state.trackKey, state.stepIndex);
+  const progHtml =
+    pct === null
+      ? `<div class="iza-sub">${escapeHtml(progressLabel(state.trackKey, state.stepIndex))}</div>`
+      : `
+        <div class="iza-sub">${escapeHtml(progressLabel(state.trackKey, state.stepIndex))}</div>
+        <div class="iza-progress" aria-label="Progresso">
+          <div style="width:${pct}%"></div>
+        </div>
+      `;
+
+  render(
+    renderCardShell(`
+      <div class="iza-top">
+        <div>
+          <h2 style="margin:0;">${escapeHtml(izaDisplayName())}</h2>
+          ${progHtml}
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:700;">${escapeHtml(userDisplayName())}</div>
+          <div class="iza-sub">em diálogo</div>
+        </div>
+      </div>
+
+      <div class="message" style="margin-top:1rem;">
+        ${escapeHtml(text).replace(/\n/g, "<br>")}
+      </div>
+
+      ${
+        canContinue
+          ? `<button class="button" id="btnNext">Continuar</button>`
+          : `<div class="iza-hint">Você está revisando uma fala anterior.</div>`
+      }
+
+      ${renderHistoryNav("")}
+    `)
+  );
+
+  mountFadeIn();
+  bindHistoryNavHandlers();
+
+  if (canContinue) {
+    el("btnNext").onclick = () => safeTransition(onContinue);
+  }
+}
+
 function showPrompt(title, question, cb) {
-  render(`
-    <div class="card">
-      <h2>${escapeHtml(title)}</h2>
-      <p>${escapeHtml(question).replace(/\n/g, "<br>")}</p>
-      <textarea id="txt" class="input-area" rows="5"></textarea>
-      <button id="btn" class="button">Enviar</button>
-    </div>
-  `);
-  el("btn").onclick = () => cb(el("txt").value.trim());
+  // Tela viva (interativa)
+  const payload = {
+    title,
+    question,
+    canSend: !state.viewMode,
+    onSend: (text) => {
+      const userText = (text || "").trim();
+      if (!userText) return;
+      safeTransition(() => cb(userText));
+    }
+  };
+
+  // registra no histórico como tela viva
+  pushView({ type: "prompt", payload: { ...payload, canSend: false } }); // no histórico, sempre "view-only"
+  // render ao vivo com canSend = true (fora do histórico)
+  renderPromptScreen({ ...payload, canSend: true }, false);
 }
 
 function showIza(text, next) {
-  render(`
-    <div class="card">
-      <h2>IZA</h2>
-      <div class="message">${escapeHtml(text).replace(/\n/g, "<br>")}</div>
-      <button class="button" onclick="izaNext()">Continuar</button>
-    </div>
-  `);
-  window.izaNext = next;
+  const payload = {
+    text,
+    canContinue: !state.viewMode,
+    onContinue: () => next()
+  };
+
+  pushView({ type: "iza", payload: { ...payload, canContinue: false } });
+  renderIzaScreen({ ...payload, canContinue: true }, false);
 }
 
 // -------------------- FINALIZE SCREEN (COPY / DOWNLOAD / SEND STATUS) --------------------
@@ -1356,21 +1658,38 @@ function buildFinalDraftBlock() {
   return `\n\n---\nTEXTO FINAL (rascunho):\n${draft}\n`;
 }
 
-function showFinalizeScreen() {
-  safeRegister();
+function renderSendStatus() {
+  if (state.registerStatus === "sending") return "Enviando registro…";
+  if (state.registerStatus === "sent") return "Registro enviado com sucesso.";
+  if (state.registerStatus === "failed")
+    return `Falha ao enviar registro. (${state.registerError || "ver console"})`;
+  return "Preparando envio…";
+}
 
-  const transcript = buildTranscript() + buildFinalDraftBlock();
+function updateSendStatusUI() {
+  const node = document.getElementById("sendStatus");
+  if (node) node.textContent = renderSendStatus();
+}
 
-  render(`
-    <div class="card">
-      <h2>Seu registro</h2>
+function renderFinalScreen(payload, fromHistory = false) {
+  render(
+    renderCardShell(`
+      <div class="iza-top">
+        <div>
+          <h2 style="margin:0;">Seu registro</h2>
+          <div class="iza-sub">${escapeHtml(userDisplayName())} · ${escapeHtml(izaDisplayName())}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="iza-chip">Final</div>
+        </div>
+      </div>
 
-      <p id="sendStatus" style="opacity:.85;">
+      <p id="sendStatus" style="opacity:.85;margin-top:1rem;">
         ${renderSendStatus()}
       </p>
 
       <p><strong>Texto para copiar/colar</strong></p>
-      <textarea id="out" class="input-area" rows="12">${escapeHtml(transcript)}</textarea>
+      <textarea id="out" class="input-area" rows="12">${escapeHtml(payload.transcript)}</textarea>
 
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem;">
         <button class="button" onclick="copyOut()">Copiar</button>
@@ -1382,8 +1701,13 @@ function showFinalizeScreen() {
         Se o envio por e-mail estiver configurado no seu Apps Script, você receberá uma cópia no e-mail informado.
         Se não estiver, você já tem tudo aqui para salvar.
       </p>
-    </div>
-  `);
+
+      ${renderHistoryNav("")}
+    `)
+  );
+
+  mountFadeIn();
+  bindHistoryNavHandlers();
 
   window.copyOut = async function () {
     const txt = el("out").value;
@@ -1411,17 +1735,13 @@ function showFinalizeScreen() {
   };
 }
 
-function renderSendStatus() {
-  if (state.registerStatus === "sending") return "Enviando registro…";
-  if (state.registerStatus === "sent") return "Registro enviado com sucesso.";
-  if (state.registerStatus === "failed")
-    return `Falha ao enviar registro. (${state.registerError || "ver console"})`;
-  return "Preparando envio…";
-}
+function showFinalizeScreen() {
+  safeRegister();
 
-function updateSendStatusUI() {
-  const node = document.getElementById("sendStatus");
-  if (node) node.textContent = renderSendStatus();
+  const transcript = buildTranscript() + buildFinalDraftBlock();
+
+  pushView({ type: "final", payload: { transcript } });
+  renderFinalScreen({ transcript }, false);
 }
 
 // -------------------- REGISTER (robusto) --------------------
@@ -1537,7 +1857,7 @@ function setPresenceFixed(key) {
   showPresenceResult();
 }
 
-function showPresenceTest() {
+function renderPresenceTestScreen(payload, fromHistory = false) {
   const blocks = testQuestions
     .map((q, i) => {
       const opts = q.opts
@@ -1557,10 +1877,19 @@ function showPresenceTest() {
     })
     .join("");
 
-  render(`
-    <div class="card">
-      <h2>Presença da IZA</h2>
-      <p style="opacity:.85">
+  render(
+    renderCardShell(`
+      <div class="iza-top">
+        <div>
+          <h2 style="margin:0;">Presença da IZA</h2>
+          <div class="iza-sub">${escapeHtml(userDisplayName())}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="iza-chip">Ajuste</div>
+        </div>
+      </div>
+
+      <p style="opacity:.85;margin-top:1rem">
         Escolha uma presença fixa (A/B/C/D) ou faça o teste e gere um perfil <strong>híbrido</strong>.
       </p>
 
@@ -1578,8 +1907,13 @@ function showPresenceTest() {
 
       <button class="button" id="btnDone" disabled>Concluir teste</button>
       <button class="button" style="background:#a0896a;margin-top:10px;" onclick="showWelcome()">Voltar</button>
-    </div>
-  `);
+
+      ${renderHistoryNav("")}
+    `)
+  );
+
+  mountFadeIn();
+  bindHistoryNavHandlers();
 
   const btn = el("btnDone");
 
@@ -1611,43 +1945,64 @@ function showPresenceTest() {
   };
 }
 
-function showPresenceResult() {
+function showPresenceTest() {
+  pushView({ type: "presence_test", payload: {} });
+  renderPresenceTestScreen({}, false);
+}
+
+function renderPresenceResultScreen(payload, fromHistory = false) {
   const p = state.presence || PRESENCES.A;
 
-  render(`
-    <div class="card">
-      <h2>${escapeHtml(p.name)}</h2>
-      <div class="message">${escapeHtml(presenceMessage(p))}</div>
+  render(
+    renderCardShell(`
+      <div class="iza-top">
+        <div>
+          <h2 style="margin:0;">${escapeHtml(p.name)}</h2>
+          <div class="iza-sub">${escapeHtml(userDisplayName())} · presença definida</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="iza-chip">${escapeHtml(p.key === "H" ? "Híbrida" : "Fixa")}</div>
+        </div>
+      </div>
 
-      <p><strong>Escolha uma trilha:</strong></p>
+      <div class="message" style="margin-top:1rem;">${escapeHtml(presenceMessage(p))}</div>
+
+      <p style="margin-top:1rem;"><strong>Escolha uma trilha:</strong></p>
       <button class="button" onclick="startTrack('iniciante')">Trilha Iniciante</button>
       <button class="button" onclick="startTrack('intermediaria')">Trilha Intermediária (7 etapas)</button>
       <button class="button" onclick="startTrack('inspirada')">Trilha Inspirada</button>
 
       <br>
       <button class="button" style="background:#a0896a;margin-top:10px;" onclick="showPresenceTest()">Ajustar presença</button>
-    </div>
-  `);
+
+      ${renderHistoryNav("")}
+    `)
+  );
+
+  mountFadeIn();
+  bindHistoryNavHandlers();
+}
+
+function showPresenceResult() {
+  pushView({ type: "presence", payload: {} });
+  renderPresenceResultScreen({}, false);
 }
 
 // -------------------- WELCOME --------------------
-function showWelcome() {
-  state.sessionId = newSessionId();
-  state.startedAtISO = nowISO();
-  state.pageURL = window.location.href;
+function renderWelcomeScreen(payload, fromHistory = false) {
+  render(
+    renderCardShell(`
+      <div class="iza-top">
+        <div>
+          <h2 style="margin:0;">IZA no Cordel 2.0</h2>
+          <div class="iza-sub">Uma ancestral que te ajuda a pensar durante o processo de escrita.</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="iza-chip">Início</div>
+        </div>
+      </div>
 
-  state.presenceKey = null;
-  state.presence = null;
-  state.presenceMix = null;
-  state.trackKey = null;
-
-  resetConversationRuntime();
-
-  render(`
-    <div class="card">
-      <h2>IZA no Cordel 2.0</h2>
-
-      <p>
+      <p style="margin-top:1rem;">
         IZA é uma ancestral — de escrita: ela não escreve por você;
         ela te ajuda a <strong>pensar, organizar e aprofundar</strong> o que você já está tentando dizer.
       </p>
@@ -1660,8 +2015,29 @@ function showWelcome() {
       <input type="email" id="userEmail" class="input-area" placeholder="Seu e-mail">
 
       <button class="button" onclick="validateStart()">Começar</button>
-    </div>
-  `);
+
+      ${renderHistoryNav("")}
+    `)
+  );
+
+  mountFadeIn();
+  bindHistoryNavHandlers();
+}
+
+function showWelcome() {
+  state.sessionId = newSessionId();
+  state.startedAtISO = nowISO();
+  state.pageURL = window.location.href;
+
+  state.presenceKey = null;
+  state.presence = null;
+  state.presenceMix = null;
+  state.trackKey = null;
+
+  resetConversationRuntime();
+
+  pushView({ type: "welcome", payload: {} });
+  renderWelcomeScreen({}, false);
 }
 
 window.validateStart = function () {
@@ -1672,4 +2048,7 @@ window.validateStart = function () {
 };
 
 // init
-document.addEventListener("DOMContentLoaded", showWelcome);
+document.addEventListener("DOMContentLoaded", () => {
+  ensureBaseStyles();
+  showWelcome();
+});
