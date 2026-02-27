@@ -1745,15 +1745,21 @@ function buildFinalDraftBlock() {
 
 function renderSendStatus() {
   if (state.registerStatus === "sending") return "Enviando registro…";
-  if (state.registerStatus === "sent") return "Registro enviado com sucesso.";
-  if (state.registerStatus === "failed")
-    return `Falha ao enviar registro. (${state.registerError || "ver console"})`;
+
+  if (state.registerStatus === "sent") {
+    return "Registro enviado com sucesso! Se você informou um e-mail válido, uma cópia do seu laudo foi enviada para lá. Caso não receba, você pode solicitar seu escrito indicando seu nome e email para <strong>coordenacaopedagogica@gmail.com</strong>";
+  }
+
+  if (state.registerStatus === "failed") {
+    return `Falha ao enviar registro automático (${state.registerError || "erro de rede"}). Por favor, copie seu texto abaixo e solicite seu laudo enviando para <strong>coordenacaopedagogica@gmail.com</strong>`;
+  }
+
   return "Preparando envio…";
 }
 
 function updateSendStatusUI() {
   const node = document.getElementById("sendStatus");
-  if (node) node.textContent = renderSendStatus();
+  if (node) node.innerHTML = renderSendStatus();
 }
 
 function renderFinalScreen(payload, fromHistory = false) {
