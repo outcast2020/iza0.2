@@ -22,7 +22,7 @@
 // ==========================================
 
 const WEBAPP_URL =
-  "https://script.google.com/macros/s/AKfycbxdxlvEsQ1KE-79CYuFda9XJpYgvCIUpuRJiEBtJ7CZsZcjogate_dr1IoiHYgsEAPY/exec";
+  "https://script.google.com/macros/s/AKfycbzMxkzJ35vbfeMaDxGVrRyUgbS7QRbqGAcUUw8kx6mt3ehSm5pVqJmDI97hpAYKqdcX/exec";
 
 const MIN_INSPIRED_ROUNDS = 7;
 
@@ -1747,11 +1747,11 @@ function renderSendStatus() {
   if (state.registerStatus === "sending") return "Enviando registro…";
 
   if (state.registerStatus === "sent") {
-    return "Registro enviado com sucesso! Se você informou um e-mail válido, uma cópia do seu laudo foi enviada para lá. Caso não receba, você pode solicitar seu escrito indicando seu nome e email para <strong>coordenacaopedagogica@gmail.com</strong>";
+    return "Registro enviado com sucesso! Se você informou um e-mail válido, uma cópia do seu laudo foi enviada para lá. Caso não receba, você pode solicitar seu escrito indicando seu nome e email para <strong>contato@cordel2pontozero.com</strong>";
   }
 
   if (state.registerStatus === "failed") {
-    return `Falha ao enviar registro automático (${state.registerError || "erro de rede"}). Por favor, copie seu texto abaixo e solicite seu laudo enviando para <strong>coordenacaopedagogica@gmail.com</strong>`;
+    return `Falha ao enviar registro automático (${state.registerError || "erro de rede"}). Por favor, copie seu texto abaixo e solicite seu laudo enviando para <strong>contato@cordel2pontozero.com</strong>`;
   }
 
   return "Preparando envio…";
