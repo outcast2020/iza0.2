@@ -22,7 +22,7 @@
 // ==========================================
 
 const WEBAPP_URL =
-  "https://script.google.com/macros/s/AKfycbx2CDkA7TVIFNu8dsnMgEg2_WjYq8-Yntu_NoV89UE8rVdioFJZbT6cjbGCDNP7brrk/exec";
+  "https://script.google.com/macros/s/AKfycbxdxlvEsQ1KE-79CYuFda9XJpYgvCIUpuRJiEBtJ7CZsZcjogate_dr1IoiHYgsEAPY/exec";
 
 const MIN_INSPIRED_ROUNDS = 7;
 
