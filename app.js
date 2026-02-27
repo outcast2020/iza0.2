@@ -1,12 +1,15 @@
 // ==========================================
-// IZA no Cordel 2.0 — app.js (FULL FIX + QUALITY JUMP + UX PATCHES)
-// - 3 trilhas (Iniciante, Intermediária 7 etapas, Inspirada)
-// - 4 presenças + híbrida via enquete
-// - Confirmação Opção A (A/B/C/D) em todas as trilhas
-// - Tela final com COPIAR + BAIXAR + status de envio
-// - Botão Continuar sempre funciona
-// - PATCH: empatia real, fio do centro, correção de vazios
-// - PATCH: "salto de qualidade" (C força 7 palavras quando resposta é curta)
+// IZA no Cordel 2.0 — app.js (FULL FIX + QUALITY JUMP + UX PATCHES + REGISTRO EM 3 ETAPAS)
+//
+// Registro em Planilha (Apps Script):
+// - stage "init": DATA/HORA + ESCRITOR/A + EMAIL + MUNICÍPIO + ESTADO (+ origem junto)
+// - stage "choice": atualiza TRILHA + PERSONALIDADE DO BOT
+// - stage "final": grava REGISTRO DOS ESCRITOS (transcript)
+//
+// Regras de coleta:
+// - Município: campo aberto (texto)
+// - Estado: UF do Brasil (AC..TO) + opção "INTERNACIONAL"
+// - Origem: "Oficina Cordel 2.0" ou "Particular" (enviado como `origem` e pode ser guardado junto ao estado pelo script)
 //
 // UX PATCHES (AGORA):
 // - Cabeçalho mostra nome humano (IZA Calorosa / IZA Firme / etc) + nome do participante
@@ -27,25 +30,37 @@ const MIN_INSPIRED_ROUNDS = 7;
 const state = {
   name: "",
   email: "",
+  municipio: "",
+  estadoUF: "", // "BA", "MG", ... ou "INTERNACIONAL"
+  origem: "", // "Oficina Cordel 2.0" | "Particular"
+
   presenceKey: null, // "A"|"B"|"C"|"D"|"H"
   presence: null,
   presenceMix: null, // {A,B,C,D} se híbrido
   trackKey: null,
   stepIndex: 0,
   inspiredRounds: 0,
+
+  // envio final
   sent: false,
   sessionId: null,
   startedAtISO: null,
   pageURL: "",
   turns: [],
   centerType: null, // "pergunta"|"afirmacao"|"ferida"|"desejo"|"livre"
+
   // para tela final
   finalDraft: "",
   registerStatus: "idle", // idle|sending|sent|failed
   registerError: "",
 
+  // registro em 3 etapas
+  registerInitDone: false,
+  registerChoiceDone: false,
+  registerFinalDone: false,
+
   // UX: histórico de telas (para voltar/avançar só para VER)
-  viewHistory: [], // [{type:'prompt'|'iza'|'final'|'presence'|'welcome', payload:{...}}]
+  viewHistory: [], // [{type:'prompt'|'iza'|'final'|'presence'|'welcome'|'presence_test', payload:{...}}]
   viewIndex: -1,
   viewMode: false,
   stepLocked: false,
@@ -110,6 +125,10 @@ function ensureBaseStyles() {
     .button:disabled { opacity:.55; cursor:not-allowed; }
     .iza-hint { opacity:.7; font-size:.9rem; margin-top:.5rem; }
     .iza-chip { display:inline-block; padding:.15rem .5rem; border-radius:999px; background: rgba(0,0,0,.08); font-size:.82rem; opacity:.9; }
+    .iza-row { display:flex; gap:.5rem; flex-wrap:wrap; }
+    .iza-field { width:100%; padding:10px; margin-top:8px; margin-bottom:8px; border:1px solid #ccc; border-radius:8px; font-size:14px; background:#fff; }
+    .iza-radio { display:flex; gap:.75rem; flex-wrap:wrap; margin-top:.25rem; }
+    .iza-radio label { display:flex; align-items:center; gap:.35rem; padding:.35rem .55rem; border:1px solid rgba(0,0,0,.12); border-radius:999px; cursor:pointer; }
   `;
   document.head.appendChild(style);
 }
@@ -181,7 +200,6 @@ function safeTransition(nextFn) {
 
 // ---------- VIEW HISTORY (Voltar/Avançar para VER) ----------
 function pushView(entry) {
-  // se o usuário estava no meio do "replay", cortar o futuro ao registrar uma nova tela viva
   if (state.viewIndex < state.viewHistory.length - 1) {
     state.viewHistory = state.viewHistory.slice(0, state.viewIndex + 1);
   }
@@ -195,7 +213,6 @@ function enterViewMode() {
 
 function exitViewMode() {
   state.viewMode = false;
-  // sempre volta para a última tela viva
   state.viewIndex = state.viewHistory.length - 1;
   renderFromHistory();
 }
@@ -218,7 +235,6 @@ function goBackView() {
 function goForwardView() {
   if (!canGoForward()) return;
   state.viewIndex += 1;
-  // se chegou no fim, sai do modo de revisão automaticamente
   if (state.viewIndex === state.viewHistory.length - 1) state.viewMode = false;
   renderFromHistory();
 }
@@ -252,31 +268,37 @@ function renderFromHistory() {
   const entry = state.viewHistory[state.viewIndex];
   if (!entry) return;
 
-  // Despacha por tipo de tela
-  if (entry.type === "prompt") {
-    renderPromptScreen(entry.payload, /*fromHistory*/ true);
-    return;
-  }
-  if (entry.type === "iza") {
-    renderIzaScreen(entry.payload, /*fromHistory*/ true);
-    return;
-  }
-  if (entry.type === "presence") {
-    renderPresenceResultScreen(entry.payload, /*fromHistory*/ true);
-    return;
-  }
-  if (entry.type === "presence_test") {
-    renderPresenceTestScreen(entry.payload, /*fromHistory*/ true);
-    return;
-  }
-  if (entry.type === "welcome") {
-    renderWelcomeScreen(entry.payload, /*fromHistory*/ true);
-    return;
-  }
-  if (entry.type === "final") {
-    renderFinalScreen(entry.payload, /*fromHistory*/ true);
-    return;
-  }
+  if (entry.type === "prompt") return renderPromptScreen(entry.payload, true);
+  if (entry.type === "iza") return renderIzaScreen(entry.payload, true);
+  if (entry.type === "presence") return renderPresenceResultScreen(entry.payload, true);
+  if (entry.type === "presence_test") return renderPresenceTestScreen(entry.payload, true);
+  if (entry.type === "welcome") return renderWelcomeScreen(entry.payload, true);
+  if (entry.type === "final") return renderFinalScreen(entry.payload, true);
+}
+
+// -------------------- BR UF LIST --------------------
+const BR_UFS = [
+  "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
+  "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"
+];
+
+function normalizeUFOrInternational(x) {
+  const s = String(x || "").trim().toUpperCase();
+  if (!s) return "";
+  if (s === "INTERNACIONAL" || s === "INT" || s === "INTL") return "INTERNACIONAL";
+  if (s.indexOf("INTERNAC") !== -1 || s.indexOf("INTERNAT") !== -1) return "INTERNACIONAL";
+  const two = s.replace(/[^A-Z]/g, "").slice(0, 2);
+  if (BR_UFS.includes(two)) return two;
+  if (BR_UFS.includes(s)) return s;
+  return "INTERNACIONAL";
+}
+
+function normalizeOrigem(x) {
+  const s = String(x || "").trim().toLowerCase();
+  if (!s) return "";
+  if (s.includes("oficina") || s.includes("cordel")) return "Oficina Cordel 2.0";
+  if (s.includes("part")) return "Particular";
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // -------------------- PRESENCES --------------------
@@ -492,7 +514,6 @@ function ensureMeaningfulTemplateText(text, userText) {
 
   const anchor = fallbackUserAnchor(userText);
 
-  // Corrige “vazios” do tipo “—”/aspas sem conteúdo
   out = out
     .replace(/“\s*—/g, `“${anchor}—`)
     .replace(/"\s*—/g, `“${anchor}—`)
@@ -1444,12 +1465,15 @@ function resetConversationRuntime() {
   state.centerType = null;
   state.finalDraft = "";
   state.sent = false;
+
   state.registerStatus = "idle";
   state.registerError = "";
+
+  state.registerFinalDone = false;
+
   IZA_ENGINE.memory = [];
   IZA_ENGINE.usedRecently = [];
 
-  // reset histórico de telas da conversa (vai ser reconstituído)
   state.viewHistory = [];
   state.viewIndex = -1;
   state.viewMode = false;
@@ -1460,6 +1484,9 @@ function startTrack(key) {
 
   // expõe trilha para rules.js (track-aware)
   window.IZA_TRACK_KEY = key;
+
+  // ao escolher trilha, registrar "choice" (1x)
+  safeRegisterChoice();
 
   resetConversationRuntime();
   showStep();
@@ -1473,9 +1500,8 @@ function showStep() {
     const userText = (text || "").trim();
     if (!userText) return;
 
-    // comando especial inspirada
     if (state.trackKey === "inspirada" && userText.toLowerCase().startsWith("encerrar")) {
-      showFinalizeScreen(); // fecha com o que tiver
+      showFinalizeScreen();
       return;
     }
 
@@ -1604,7 +1630,6 @@ function renderIzaScreen(payload, fromHistory = false) {
 }
 
 function showPrompt(title, question, cb) {
-  // Tela viva (interativa)
   const payload = {
     title,
     question,
@@ -1616,9 +1641,7 @@ function showPrompt(title, question, cb) {
     }
   };
 
-  // registra no histórico como tela viva
-  pushView({ type: "prompt", payload: { ...payload, canSend: false } }); // no histórico, sempre "view-only"
-  // render ao vivo com canSend = true (fora do histórico)
+  pushView({ type: "prompt", payload: { ...payload, canSend: false } });
   renderPromptScreen({ ...payload, canSend: true }, false);
 }
 
@@ -1638,6 +1661,7 @@ function buildTranscript() {
   const header =
     `IZA no Cordel 2.0 — Registro\n` +
     `Nome: ${state.name}\nEmail: ${state.email}\n` +
+    `Município: ${state.municipio || ""}\nEstado: ${state.estadoUF || ""}\nOrigem: ${state.origem || ""}\n` +
     `Trilha: ${state.trackKey}\nPresença: ${state.presence?.name || state.presenceKey}\n` +
     `Início: ${state.startedAtISO}\nFim: ${nowISO()}\n` +
     `---\n\n`;
@@ -1698,8 +1722,7 @@ function renderFinalScreen(payload, fromHistory = false) {
       </div>
 
       <p style="opacity:.7;margin-top:1rem;">
-        Se o envio por e-mail estiver configurado no seu Apps Script, você receberá uma cópia no e-mail informado.
-        Se não estiver, você já tem tudo aqui para salvar.
+        Você já tem tudo aqui para salvar.
       </p>
 
       ${renderHistoryNav("")}
@@ -1736,7 +1759,7 @@ function renderFinalScreen(payload, fromHistory = false) {
 }
 
 function showFinalizeScreen() {
-  safeRegister();
+  safeRegisterFinal();
 
   const transcript = buildTranscript() + buildFinalDraftBlock();
 
@@ -1744,29 +1767,31 @@ function showFinalizeScreen() {
   renderFinalScreen({ transcript }, false);
 }
 
-// -------------------- REGISTER (robusto) --------------------
-async function safeRegister() {
-  if (state.sent) return;
-  state.sent = true;
-
-  state.registerStatus = "sending";
-  updateSendStatusUI();
-
-  const payload = {
+// -------------------- REGISTER (3 etapas) --------------------
+function buildRegisterBasePayload(stage) {
+  return {
     sessionId: state.sessionId,
-    startedAtISO: state.startedAtISO,
-    endedAtISO: nowISO(),
-    page: state.pageURL,
+    stage, // "init" | "choice" | "final"
+    escritor: state.name,
     name: state.name,
     email: state.email,
-    presenceKey: state.presenceKey,
-    presenceName: state.presence?.name || "",
-    presenceMix: state.presenceMix || null,
-    trackKey: state.trackKey,
-    finalDraft: state.finalDraft || "",
-    turns: state.turns
-  };
+    municipio: state.municipio,
+    city: state.municipio,
+    estado: state.estadoUF,
+    stateUF: state.estadoUF,
+    origem: state.origem,
+    source: state.origem,
 
+    trilha: state.trackKey || "",
+    trackKey: state.trackKey || "",
+    personalidade: state.presence?.name || state.presenceKey || "",
+    presenceName: state.presence?.name || "",
+    presenceKey: state.presenceKey || "",
+    presenceMix: state.presenceMix || null
+  };
+}
+
+async function postJsonRobust(payload) {
   try {
     const r = await fetch(WEBAPP_URL, {
       method: "POST",
@@ -1774,9 +1799,7 @@ async function safeRegister() {
       body: JSON.stringify(payload)
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    state.registerStatus = "sent";
-    updateSendStatusUI();
-    return;
+    return true;
   } catch (e1) {
     try {
       const r2 = await fetch(WEBAPP_URL, {
@@ -1784,15 +1807,68 @@ async function safeRegister() {
         body: JSON.stringify(payload)
       });
       if (!r2.ok) throw new Error("HTTP " + r2.status);
-      state.registerStatus = "sent";
-      updateSendStatusUI();
-      return;
+      return true;
     } catch (e2) {
-      state.registerStatus = "failed";
-      state.registerError = String(e2?.message || e1?.message || e2 || e1);
-      console.error("Falha ao enviar registro:", e1, e2);
-      updateSendStatusUI();
+      console.error("Falha ao enviar:", e1, e2, payload);
+      throw e2;
     }
+  }
+}
+
+async function safeRegisterInit() {
+  if (state.registerInitDone) return;
+  if (!state.sessionId) return;
+
+  const payload = buildRegisterBasePayload("init");
+  try {
+    await postJsonRobust(payload);
+    state.registerInitDone = true;
+  } catch (_) {
+    // não trava a UX
+  }
+}
+
+async function safeRegisterChoice() {
+  if (state.registerChoiceDone) return;
+  if (!state.sessionId) return;
+  if (!state.presenceKey) return; // precisa ter presença definida
+  if (!state.trackKey) return; // precisa ter trilha escolhida
+
+  const payload = buildRegisterBasePayload("choice");
+  try {
+    await postJsonRobust(payload);
+    state.registerChoiceDone = true;
+  } catch (_) {
+    // não trava a UX
+  }
+}
+
+async function safeRegisterFinal() {
+  if (state.registerFinalDone) return;
+  state.registerFinalDone = true;
+
+  state.registerStatus = "sending";
+  updateSendStatusUI();
+
+  const payload = {
+    ...buildRegisterBasePayload("final"),
+    startedAtISO: state.startedAtISO,
+    endedAtISO: nowISO(),
+    page: state.pageURL,
+    finalDraft: state.finalDraft || "",
+    escritos: buildTranscript() + buildFinalDraftBlock(),
+    transcript: buildTranscript() + buildFinalDraftBlock(),
+    turns: state.turns
+  };
+
+  try {
+    await postJsonRobust(payload);
+    state.registerStatus = "sent";
+    updateSendStatusUI();
+  } catch (e) {
+    state.registerStatus = "failed";
+    state.registerError = String(e?.message || e || "erro");
+    updateSendStatusUI();
   }
 }
 
@@ -1959,6 +2035,9 @@ function renderPresenceResultScreen(payload, fromHistory = false) {
         <div>
           <h2 style="margin:0;">${escapeHtml(p.name)}</h2>
           <div class="iza-sub">${escapeHtml(userDisplayName())} · presença definida</div>
+          <div class="iza-sub" style="margin-top:.35rem;">
+            ${escapeHtml(state.municipio || "")}${state.municipio ? " · " : ""}${escapeHtml(state.estadoUF || "")}${(state.origem ? " · " + escapeHtml(state.origem) : "")}
+          </div>
         </div>
         <div style="text-align:right;">
           <div class="iza-chip">${escapeHtml(p.key === "H" ? "Híbrida" : "Fixa")}</div>
@@ -1990,6 +2069,12 @@ function showPresenceResult() {
 
 // -------------------- WELCOME --------------------
 function renderWelcomeScreen(payload, fromHistory = false) {
+  const ufOptions = [
+    `<option value="">Selecione…</option>`,
+    ...BR_UFS.map((uf) => `<option value="${uf}">${uf}</option>`),
+    `<option value="INTERNACIONAL">INTERNACIONAL</option>`
+  ].join("");
+
   render(
     renderCardShell(`
       <div class="iza-top">
@@ -2008,17 +2093,40 @@ function renderWelcomeScreen(payload, fromHistory = false) {
       </p>
 
       <p style="opacity:.85">
-        Antes de começar, ajuste a presença da IZA.
+        Antes de começar, preencha seus dados e escolha a origem.
       </p>
 
-      <input type="text" id="userName" class="input-area" placeholder="Seu nome">
-      <input type="email" id="userEmail" class="input-area" placeholder="Seu e-mail">
+      <input type="text" id="userName" class="input-area" placeholder="Seu nome" value="${escapeHtml(state.name)}">
+      <input type="email" id="userEmail" class="input-area" placeholder="Seu e-mail" value="${escapeHtml(state.email)}">
+
+      <input type="text" id="userMunicipio" class="input-area" placeholder="Município (ex.: Salvador)" value="${escapeHtml(state.municipio)}">
+
+      <select id="userEstado" class="iza-field">
+        ${ufOptions}
+      </select>
+
+      <div style="margin-top:.25rem;">
+        <div style="font-weight:700;margin:.25rem 0;">Origem</div>
+        <div class="iza-radio">
+          <label><input type="radio" name="origem" value="Oficina Cordel 2.0"> Oficina Cordel 2.0</label>
+          <label><input type="radio" name="origem" value="Particular"> Particular</label>
+        </div>
+      </div>
 
       <button class="button" onclick="validateStart()">Começar</button>
 
       ${renderHistoryNav("")}
     `)
   );
+
+  // set estado + origem com estado atual
+  const sel = document.getElementById("userEstado");
+  if (sel) sel.value = state.estadoUF || "";
+
+  const radios = document.querySelectorAll('input[name="origem"]');
+  radios.forEach((r) => {
+    if (String(r.value) === String(state.origem)) r.checked = true;
+  });
 
   mountFadeIn();
   bindHistoryNavHandlers();
@@ -2034,6 +2142,10 @@ function showWelcome() {
   state.presenceMix = null;
   state.trackKey = null;
 
+  state.registerInitDone = false;
+  state.registerChoiceDone = false;
+  state.registerFinalDone = false;
+
   resetConversationRuntime();
 
   pushView({ type: "welcome", payload: {} });
@@ -2043,7 +2155,17 @@ function showWelcome() {
 window.validateStart = function () {
   state.name = el("userName").value.trim();
   state.email = el("userEmail").value.trim();
+
+  state.municipio = (el("userMunicipio")?.value || "").trim();
+  state.estadoUF = normalizeUFOrInternational(el("userEstado")?.value || "");
+  const origemPicked = document.querySelector('input[name="origem"]:checked')?.value || "";
+  state.origem = normalizeOrigem(origemPicked);
+
   if (!state.name || !state.email) return;
+
+  // registro init (não trava)
+  safeRegisterInit();
+
   showPresenceTest();
 };
 
