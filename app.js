@@ -1262,12 +1262,12 @@ function centerChoicePrompt(fragment) {
     return `“${frag}—”\nA) pergunta  B) afirmação  C) ferida  D) desejo\n(A/B/C/D ou escreva do seu jeito)`;
   }
   if (p.key === "C") {
-    return `Você disse: “${frag}—”. Classifique o núcleo:\nA) pergunta\nB) afirmação\nC) ferida\nD) desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
+    return `Você disse: “${frag}—”. Classifique o núcleo:\nA) pergunta\nB) afirmação\nC) ferida\nD) desejo\nResponda Escreva do seu jeito.`;
   }
   if (p.key === "B") {
-    return `Ao ler “${frag}—”, eu sinto um núcleo aí.\nIsso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
+    return `Ao ler “${frag}—”, eu sinto um núcleo aí.\nIsso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda Escreva do seu jeito..`;
   }
-  return `Quando você diz “${frag}—”, isso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda A/B/C/D (ou escreva do seu jeito).`;
+  return `Quando você diz “${frag}—”, isso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda Escreva do seu jeito..`;
 }
 
 function interpretCenterChoice(text) {
@@ -1305,7 +1305,7 @@ const TRACKS = {
       },
       {
         key: "tipo_centro",
-        prompt: "A/B/C/D (ou escreva do seu jeito)",
+        prompt: "Escreva do seu jeito.",
         onUser: (t) => {
           const parsed = interpretCenterChoice(t);
           state.centerType = parsed.type;
@@ -1367,7 +1367,7 @@ const TRACKS = {
       },
       {
         key: "tipo_centro",
-        prompt: "A/B/C/D (ou escreva do seu jeito)",
+        prompt: "Escreva do seu jeito.",
         onUser: (t) => {
           const parsed = interpretCenterChoice(t);
           state.centerType = parsed.type;
@@ -1431,7 +1431,7 @@ const TRACKS = {
       },
       {
         key: "tipo_centro",
-        prompt: "A/B/C/D (ou escreva do seu jeito)",
+        prompt: "Escreva do seu jeito.",
         onUser: (t) => {
           const parsed = interpretCenterChoice(t);
           state.centerType = parsed.type;
