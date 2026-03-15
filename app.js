@@ -1884,10 +1884,10 @@ const JOURNEY_STOPWORDS = new Set([
   "isso", "isto", "ja", "la", "mais", "mas", "me", "mesmo", "meu", "minha", "muito", "na",
   "nas", "nem", "no", "nos", "nossa", "nosso", "num", "numa", "o", "os", "ou", "para",
   "pela", "pelas", "pelo", "pelos", "por", "porque", "pra", "que", "quem", "se", "sem",
-  "ser", "seu", "sua", "tambem", "te", "tem", "tinha", "to", "tu", "um", "uma", "voce",
+  "ser", "seu", "seus", "sua", "suas", "tambem", "te", "tem", "tinha", "to", "tu", "um", "uma", "voce",
   "voces", "texto", "escrita", "coisa", "aqui", "agora", "hoje", "ontem", "amanha", "gente",
   "tipo", "sobre", "fazer", "feito", "tenho", "tava", "estou", "quero", "queria", "vai",
-  "vou", "fica", "ficou", "so", "mim"
+  "vou", "fica", "ficou", "so", "mim", "meus", "minhas", "dele", "dela"
 ]);
 
 function clipText(text, max = 160) {
@@ -1913,6 +1913,14 @@ function keywordRoot(token) {
   return token.length <= 5 ? token : token.slice(0, 5);
 }
 
+function scoreKeywordToken(token, contextWeight = 1) {
+  const lengthBonus = Math.min(2, Math.max(0, token.length - 5) * 0.2);
+  const symbolicBonus = /(?:dade|mento|cao|coes|gem|ario|arios|eiro|eira|ismo|ura|ez|al|or|orio)$/.test(token)
+    ? 0.8
+    : 0;
+  return contextWeight + lengthBonus + symbolicBonus;
+}
+
 function tokenizeForKeywords(text) {
   return normalizeSearchText(text)
     .replace(/[^a-z0-9\s]/g, " ")
@@ -1935,19 +1943,27 @@ function extractJourneyKeywords() {
   const weightedSources = [
     { text: state.finalDraft || "", weight: 4 },
     { text: extractEmergentPhrase(), weight: 3 },
-    { text: userTexts.slice(-2).join(" "), weight: 2 },
-    { text: userTexts.join(" "), weight: 1 }
+    { text: userTexts.slice(-Math.min(6, userTexts.length)).join(" "), weight: state.trackKey === "inspirada" ? 3 : 2 },
+    { text: userTexts.join(" "), weight: 2 },
+    { text: userTexts.slice(0, Math.min(3, userTexts.length)).join(" "), weight: 1.5 }
   ];
 
   weightedSources.forEach(({ text, weight }) => {
     tokenizeForKeywords(text).forEach((token) => {
-      counts[token] = (counts[token] || 0) + weight;
+      counts[token] = (counts[token] || 0) + scoreKeywordToken(token, weight);
     });
   });
 
   if (state.centerType && !["", "livre"].includes(state.centerType)) {
     counts[state.centerType] = (counts[state.centerType] || 0) + 2;
   }
+
+  userTexts.forEach((text, index) => {
+    const emphasisWeight = index >= userTexts.length - 4 ? 1.25 : 0.7;
+    tokenizeForKeywords(text).forEach((token) => {
+      counts[token] = (counts[token] || 0) + scoreKeywordToken(token, emphasisWeight);
+    });
+  });
 
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
@@ -2159,6 +2175,11 @@ function updateFinalClosureUI() {
 
 function requestLiteraryGift(payload) {
   return new Promise((resolve) => {
+    const journeyText = userTurnsOnly()
+      .slice(-Math.min(8, userTurnsOnly().length))
+      .map((turn) => normalizeInlineText(turn.text))
+      .filter(Boolean)
+      .join(" || ");
     const callbackName =
       "__izaGiftCb_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
     const params = new URLSearchParams({
@@ -2170,6 +2191,7 @@ function requestLiteraryGift(payload) {
         [payload.emergentPhrase, payload.lastText, state.finalDraft].filter(Boolean).join(" || "),
         520
       ),
+      journeyText: clipText(journeyText, 900),
       trackKey: state.trackKey || "",
       presenceKey: state.presenceKey || ""
     });
