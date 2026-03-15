@@ -2054,6 +2054,16 @@ function normalizeGiftResponse(rawGift, payload) {
   };
 }
 
+function renderGiftLead(source) {
+  if (source === "associated_poem") {
+    return "Nem sempre o encontro vem por espelho exato. Às vezes ele aparece por vizinhança de imagens e linguagem.";
+  }
+  if (source === "iza_blessing" || source === "fallback") {
+    return "Nem todo eco chega por um livro já aberto. Às vezes ele nasce do que ficou vibrando no seu texto.";
+  }
+  return "Nem sempre a trilha termina onde acaba. Às vezes ela ecoa em outro verso.";
+}
+
 function extractEmergentPhrase() {
   const source =
     normalizeInlineText(state.finalDraft) ||
@@ -2106,7 +2116,7 @@ function buildFinalRecordTranscript(payload) {
 
   if (payload.literaryGift?.fragment) {
     parts.push(
-      `\nPRESENTE LITERÁRIO DA IZA:\n${payload.literaryGift.fragment}\n` +
+      `\nPRESENTE LITERÁRIO DA IZA:\n${payload.literaryGift.intro ? payload.literaryGift.intro + "\n\n" : ""}${payload.literaryGift.fragment}\n` +
       `Crédito: ${payload.literaryGift.author || "IZA"} - ${payload.literaryGift.title || "Presente"}\n`
     );
   }
@@ -2125,7 +2135,10 @@ function renderKeywordTags(keywords) {
 }
 
 function renderLiteraryGift(payload) {
-  const keywordsHtml = renderKeywordTags(payload.keywords || []);
+  const activeKeywords = payload.literaryGift?.matchedKeywords?.length
+    ? payload.literaryGift.matchedKeywords
+    : (payload.keywords || []);
+  const keywordsHtml = renderKeywordTags(activeKeywords);
 
   if (payload.literaryGiftStatus === "loading") {
     return `
@@ -2145,7 +2158,7 @@ function renderLiteraryGift(payload) {
   return `
     <div class="iza-gift">
       <p class="iza-section-title"><strong>Presente literário da IZA</strong></p>
-      <p class="iza-copy">Nem sempre a trilha termina onde acaba. Às vezes ela ecoa em outro verso.</p>
+      <p class="iza-copy">${escapeHtml(renderGiftLead(gift.source))}</p>
       <p class="iza-copy iza-copy--soft">${escapeHtml(gift.intro || "")}</p>
       ${keywordsHtml}
       <div class="message">${escapeHtml(gift.fragment || "").replace(/\n/g, "<br>")}</div>
@@ -2371,7 +2384,7 @@ function renderFinalScreen(payload, fromHistory = false) {
 
   window.downloadTxt = function () {
     const txt = el("out").value;
-    const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+    const blob = new Blob(["\uFEFF", txt], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
