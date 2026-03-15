@@ -46,6 +46,9 @@ var AUXILIARY_VERBS = {
 
 var LITERARY_GIFT_MIN_SCORE = 7;
 var SURPRISE_THRESHOLD = 0.85;
+var DEFAULT_RECORDS_SPREADSHEET_ID = "1w13EVysAWLuF5RgMLUcUHEL0cJcuD9fryJbX3glZ8Ac";
+var DEFAULT_POEMS_SPREADSHEET_ID = "1ZWLSI39VuXrmUoRIojdchlqZUdV5pvdqzqhzoGmRds0";
+var DEFAULT_POEMS_SHEET_NAME = "POEMS";
 
 function setup() {
   var sheet = getRecordsSheet_();
@@ -278,9 +281,9 @@ function syncPoemsAnnotations_() {
 
 function getRecordsSheet_() {
   var props = PropertiesService.getScriptProperties();
-  var spreadsheetId = String(props.getProperty("IZA_RECORDS_SPREADSHEET_ID") || "").trim();
+  var spreadsheetId = String(props.getProperty("IZA_RECORDS_SPREADSHEET_ID") || DEFAULT_RECORDS_SPREADSHEET_ID).trim();
   var sheetName = String(props.getProperty("IZA_RECORDS_SHEET_NAME") || "").trim();
-  var ss = spreadsheetId ? SpreadsheetApp.openById(spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
+  var ss = openSpreadsheetSafely_(spreadsheetId) || SpreadsheetApp.getActiveSpreadsheet();
   if (sheetName) {
     return ss.getSheetByName(sheetName) || ss.getActiveSheet();
   }
@@ -289,16 +292,25 @@ function getRecordsSheet_() {
 
 function getPoemsSheet_() {
   var props = PropertiesService.getScriptProperties();
-  var spreadsheetId = String(props.getProperty("IZA_POEMS_SPREADSHEET_ID") || "").trim();
-  var sheetName = String(props.getProperty("IZA_POEMS_SHEET_NAME") || "POEMS").trim();
-  var ss = spreadsheetId ? SpreadsheetApp.openById(spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
-
-  return (
+  var spreadsheetId = String(props.getProperty("IZA_POEMS_SPREADSHEET_ID") || DEFAULT_POEMS_SPREADSHEET_ID).trim();
+  var sheetName = String(props.getProperty("IZA_POEMS_SHEET_NAME") || DEFAULT_POEMS_SHEET_NAME).trim();
+  var ss = openSpreadsheetSafely_(spreadsheetId) || SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = (
     ss.getSheetByName(sheetName) ||
     ss.getSheetByName("POEMS") ||
     ss.getSheetByName("Poems") ||
     ss.getSheetByName("poems")
   );
+  return sheet || ss.getActiveSheet();
+}
+
+function openSpreadsheetSafely_(spreadsheetId) {
+  if (!spreadsheetId) return null;
+  try {
+    return SpreadsheetApp.openById(spreadsheetId);
+  } catch (error) {
+    return null;
+  }
 }
 
 function ensureRecordHeaders_(sheet) {
