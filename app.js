@@ -2023,10 +2023,10 @@ function buildFallbackLiteraryGift(keywords) {
   return {
     source: "fallback",
     seed,
-    intro: "Nao encontrei um eco direto na biblioteca agora, mas IZA nao te deixa sair de maos vazias.",
-    fragment: `Guarde ${seed}. Quando a trilha parece terminar, ela ainda conversa com ${companion}. O que ficou vivo aqui talvez seja o comeco de outra frase.`,
+    intro: "Não encontrei um eco direto na biblioteca agora, mas IZA não te deixa sair de mãos vazias.",
+    fragment: `Guarde ${seed}. Quando a trilha parece terminar, ela ainda conversa com ${companion}. O que ficou vivo aqui talvez seja o começo de outra frase.`,
     author: "IZA",
-    title: "Bencao de encerramento",
+    title: "Bênção de encerramento",
     matchedKeywords: [seed, companion].filter(Boolean)
   };
 }
@@ -2044,10 +2044,10 @@ function normalizeGiftResponse(rawGift, payload) {
     seed: rawGift.seed || payload.keywords?.[0] || "",
     intro:
       rawGift.intro ||
-      "Antes de encerrar, recolhi alguns rastros do que voce deixou pelo caminho e encontrei este eco.",
+      "Antes de encerrar, recolhi alguns rastros do que você deixou pelo caminho e encontrei este eco.",
     fragment,
     author: rawGift.author || "Autor desconhecido",
-    title: rawGift.title || "Trecho sem titulo",
+    title: rawGift.title || "Trecho sem título",
     matchedKeywords: Array.isArray(rawGift.matchedKeywords)
       ? rawGift.matchedKeywords.filter(Boolean).slice(0, 5)
       : (payload.keywords || []).slice(0, 3)
@@ -2097,7 +2097,7 @@ function buildFinalRecordTranscript(payload) {
   const parts = [payload.baseTranscript || buildTranscript() + buildFinalDraftBlock()];
 
   if (payload.journeySynthesis) {
-    parts.push(`\n---\nSINTESE DA JORNADA:\n${payload.journeySynthesis}\n`);
+    parts.push(`\n---\nSÍNTESE DA JORNADA:\n${payload.journeySynthesis}\n`);
   }
 
   if (payload.keywords?.length) {
@@ -2106,8 +2106,8 @@ function buildFinalRecordTranscript(payload) {
 
   if (payload.literaryGift?.fragment) {
     parts.push(
-      `\nPRESENTE LITERARIO DA IZA:\n${payload.literaryGift.fragment}\n` +
-      `Credito: ${payload.literaryGift.author || "IZA"} - ${payload.literaryGift.title || "Presente"}\n`
+      `\nPRESENTE LITERÁRIO DA IZA:\n${payload.literaryGift.fragment}\n` +
+      `Crédito: ${payload.literaryGift.author || "IZA"} - ${payload.literaryGift.title || "Presente"}\n`
     );
   }
 
@@ -2130,11 +2130,11 @@ function renderLiteraryGift(payload) {
   if (payload.literaryGiftStatus === "loading") {
     return `
       <div class="iza-gift">
-        <p class="iza-section-title"><strong>Presente literario da IZA</strong></p>
-        <p class="iza-copy">Antes de encerrar, recolhi alguns rastros do que voce deixou pelo caminho.</p>
+        <p class="iza-section-title"><strong>Presente literário da IZA</strong></p>
+        <p class="iza-copy">Antes de encerrar, recolhi alguns rastros do que você deixou pelo caminho.</p>
         <p class="iza-copy iza-copy--soft">Separei palavras que insistiram em permanecer acesas.</p>
         ${keywordsHtml}
-        <div class="message">IZA esta procurando um eco poetico para essas pistas...</div>
+        <div class="message">IZA está procurando um eco poético para essas pistas...</div>
       </div>
     `;
   }
@@ -2144,8 +2144,8 @@ function renderLiteraryGift(payload) {
 
   return `
     <div class="iza-gift">
-      <p class="iza-section-title"><strong>Presente literario da IZA</strong></p>
-      <p class="iza-copy">Nem sempre a trilha termina onde acaba. As vezes ela ecoa em outro verso.</p>
+      <p class="iza-section-title"><strong>Presente literário da IZA</strong></p>
+      <p class="iza-copy">Nem sempre a trilha termina onde acaba. Às vezes ela ecoa em outro verso.</p>
       <p class="iza-copy iza-copy--soft">${escapeHtml(gift.intro || "")}</p>
       ${keywordsHtml}
       <div class="message">${escapeHtml(gift.fragment || "").replace(/\n/g, "<br>")}</div>
@@ -2262,14 +2262,14 @@ function syncLiteraryGiftForFinal() {
 }
 
 function renderSendStatus() {
-  if (state.registerStatus === "sending") return "IZA esta guardando sua sintese e seu registro...";
+  if (state.registerStatus === "sending") return "IZA está guardando sua síntese e seu registro...";
 
   if (state.registerStatus === "sent") {
-    return "Registro guardado. Se voce informou um e-mail valido, a sintese e o presente literario seguem em envio sem travar o encerramento.";
+    return "Registro guardado. Se você informou um e-mail válido, a síntese e o presente literário seguem em envio sem travar o encerramento.";
   }
 
   if (state.registerStatus === "failed") {
-    return `Nao consegui registrar automaticamente (${state.registerError || "erro de rede"}). Seu fechamento ficou aqui na tela: copie o registro abaixo se quiser preservar tudo agora.`;
+    return `Não consegui registrar automaticamente (${state.registerError || "erro de rede"}). Seu fechamento ficou aqui na tela: copie o registro abaixo se quiser preservar tudo agora.`;
   }
 
   return "Preparando o encerramento...";
@@ -2292,7 +2292,7 @@ function renderFinalScreen(payload, fromHistory = false) {
     payload.lastText
       ? `
         <div class="iza-summary-item">
-          <p class="iza-section-title"><strong>Ultima versao</strong></p>
+          <p class="iza-section-title"><strong>Última versão</strong></p>
           <div class="message">${escapeHtml(payload.lastText)}</div>
         </div>`
       : "",
@@ -2308,7 +2308,7 @@ function renderFinalScreen(payload, fromHistory = false) {
   const synthesisHtml = payload.journeySynthesis
     ? `
       <div class="iza-gift">
-        <p class="iza-section-title"><strong>Sintese da jornada</strong></p>
+        <p class="iza-section-title"><strong>Síntese da jornada</strong></p>
         <div class="message">${escapeHtml(payload.journeySynthesis)}</div>
       </div>
     `
@@ -2343,11 +2343,11 @@ function renderFinalScreen(payload, fromHistory = false) {
       <div class="iza-actions">
         <button class="button" onclick="copyOut()">Copiar registro</button>
         <button class="button" onclick="downloadTxt()">Baixar .txt</button>
-        <button class="button ritual" onclick="location.reload()">Comecar outro texto</button>
+        <button class="button ritual" onclick="location.reload()">Começar outro texto</button>
       </div>
 
       <p class="iza-copy iza-copy--quiet">
-        Seu percurso ficou guardado com sintese, palavras-chave e um eco final da IZA.
+        Seu percurso ficou guardado com síntese, palavras-chave e um eco final da IZA.
       </p>
 
       ${renderHistoryNav("")}
