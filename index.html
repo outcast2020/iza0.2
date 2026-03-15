@@ -5,24 +5,71 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>IZA no Cordel 2.0</title>
   <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700;800&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
-<body>
-  <header>
-    <img src="logo_cordel_color.png" class="logo" alt="Logo Cordel 2.0">
-    <h1>IZA no Cordel 2.0</h1>
-    <p>Uma ancestral que te ajuda a pensar durante o processo de escrita.</p>
-  </header>
+<body class="iza-body">
+  <div class="iza-atmosphere" aria-hidden="true">
+    <div class="iza-atmosphere__sun"></div>
+    <div class="iza-atmosphere__grain"></div>
+    <div class="iza-atmosphere__ornament iza-atmosphere__ornament--left"></div>
+    <div class="iza-atmosphere__ornament iza-atmosphere__ornament--right"></div>
+  </div>
 
-  <main id="app">
-    <!-- Conteúdo dinâmico será injetado aqui -->
-  </main>
+  <div class="iza-shell">
+    <header class="site-header">
+      <div class="site-header__frame">
+        <div class="site-header__brand">
+          <div class="site-badge">Cordel 2.0</div>
+          <div class="hero-ribbon">
+            <img src="logo_cordel_color.png" class="logo" alt="Logo Cordel 2.0">
+            <div class="hero-ribbon__copy">
+              <p class="hero-ribbon__eyebrow">Chatbot reflexivo</p>
+              <h1>IZA no Cordel 2.0</h1>
+              <p class="hero-ribbon__tagline">Perguntar para pensar.</p>
+            </div>
+          </div>
+        </div>
 
-  <footer class="footer">
-    &copy; 2026 Cordel 2.0 – Projeto IZA
-  </footer>
+        <div class="site-header__note">
+          <p class="site-header__kicker">Oficina de escrita guiada</p>
+          <p class="site-header__text">
+            Uma ancestral de palavras que acolhe, espelha e devolve perguntas
+            para aprofundar o que j&aacute; pulsa no seu texto.
+          </p>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-stage">
+      <aside class="companion-panel" aria-label="Presen&ccedil;a da IZA">
+        <div class="companion-panel__seal">IZA</div>
+        <p class="companion-panel__eyebrow">Presen&ccedil;a de escrita</p>
+        <h2 class="companion-panel__title">Uma oficina po&eacute;tica, n&atilde;o uma m&aacute;quina fria.</h2>
+        <p class="companion-panel__text">
+          IZA te acompanha com perguntas curtas, escuta atenta e ritmo de cordel.
+        </p>
+        <div class="companion-panel__quote">
+          "Vamos escutar melhor o que teu texto est&aacute; tentando dizer?"
+        </div>
+      </aside>
+
+      <section class="board-panel">
+        <div id="app">
+          <!-- Conteudo dinamico sera injetado aqui -->
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-footer__stamp">Projeto IZA</div>
+      <p class="site-footer__text">&copy; 2026 Cordel 2.0 &middot; Escrita, imagina&ccedil;&atilde;o e reflex&atilde;o.</p>
+    </footer>
+  </div>
 
   <script src="rules.js?v=1" defer></script>
-  <script src="app.js?v=7" defer></script>
+  <script src="app.js?v=8" defer></script>
 </body>
 </html>
