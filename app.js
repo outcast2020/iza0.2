@@ -25,6 +25,7 @@ const WEBAPP_URL =
   "https://script.google.com/macros/s/AKfycbzMxkzJ35vbfeMaDxGVrRyUgbS7QRbqGAcUUw8kx6mt3ehSm5pVqJmDI97hpAYKqdcX/exec";
 
 const MIN_INSPIRED_ROUNDS = 7;
+const GIFT_LOOKUP_TIMEOUT_MS = 6500;
 
 // -------------------- STATE --------------------
 const state = {
@@ -51,6 +52,7 @@ const state = {
 
   // para tela final
   finalDraft: "",
+  finalClosure: null,
   registerStatus: "idle", // idle|sending|sent|failed
   registerError: "",
 
@@ -58,6 +60,7 @@ const state = {
   registerInitDone: false,
   registerChoiceDone: false,
   registerFinalDone: false,
+  registerGiftDone: false,
 
   // UX: histórico de telas (para voltar/avançar só para VER)
   viewHistory: [], // [{type:'prompt'|'iza'|'final'|'presence'|'welcome'|'presence_test', payload:{...}}]
@@ -108,7 +111,7 @@ function loadAndResumeSession() {
     return false;
   }
 
-  const wantResume = confirm("Você tem uma conversa em andamento salva. Deseja continuar de onde parou?");
+  const wantResume = confirm("Ha uma jornada de escrita em andamento. Quer retomar do ponto em que parou?");
   if (!wantResume) {
     clearStateFromLocal();
     return false;
@@ -159,27 +162,7 @@ function pushTurn(role, text, meta = {}) {
 
 // -------------------- UX PATCH HELPERS --------------------
 function ensureBaseStyles() {
-  if (document.getElementById("izaUxStyles")) return;
-  const style = document.createElement("style");
-  style.id = "izaUxStyles";
-  style.textContent = `
-    .iza-fade { opacity: 0; transform: translateY(2px); transition: opacity .18s ease, transform .18s ease; }
-    .iza-fade.is-in { opacity: 1; transform: translateY(0); }
-    .iza-top { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
-    .iza-sub { opacity:.75; font-size:.92rem; margin-top:.15rem; }
-    .iza-progress { height:8px; background: rgba(0,0,0,.08); border-radius:999px; overflow:hidden; margin:.65rem 0 0 0; }
-    .iza-progress > div { height:100%; width:0%; background: rgba(0,0,0,.35); border-radius:999px; transition: width .22s ease; }
-    .iza-nav { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.75rem; }
-    .button.secondary { background: rgba(0,0,0,.10); color: inherit; }
-    .button:disabled { opacity:.55; cursor:not-allowed; }
-    .iza-hint { opacity:.7; font-size:.9rem; margin-top:.5rem; }
-    .iza-chip { display:inline-block; padding:.15rem .5rem; border-radius:999px; background: rgba(0,0,0,.08); font-size:.82rem; opacity:.9; }
-    .iza-row { display:flex; gap:.5rem; flex-wrap:wrap; }
-    .iza-field { width:100%; padding:10px; margin-top:8px; margin-bottom:8px; border:1px solid #ccc; border-radius:8px; font-size:14px; background:#fff; }
-    .iza-radio { display:flex; gap:.75rem; flex-wrap:wrap; margin-top:.25rem; }
-    .iza-radio label { display:flex; align-items:center; gap:.35rem; padding:.35rem .55rem; border:1px solid rgba(0,0,0,.12); border-radius:999px; cursor:pointer; }
-  `;
-  document.head.appendChild(style);
+  return;
 }
 
 function firstName(full) {
@@ -214,14 +197,37 @@ function progressPct(trackKey, stepIndex) {
 function progressLabel(trackKey, stepIndex) {
   if (trackKey === "inspirada") {
     const r = Math.max(0, state.inspiredRounds || 0);
-    return r ? `Rodada ${r}` : "Conversa aberta";
+    if (!r) return `Conversa aberta · minimo ${MIN_INSPIRED_ROUNDS} rodadas`;
+    if (r < MIN_INSPIRED_ROUNDS) {
+      return `Rodada ${r} de ${MIN_INSPIRED_ROUNDS}`;
+    }
+    return `Rodada ${r} · ja da para encerrar se fizer sentido`;
   }
   const total = trackTotalSteps(trackKey);
-  return `Etapa ${Math.min(total, stepIndex + 1)} de ${total}`;
+  return `Passo ${Math.min(total, stepIndex + 1)} de ${total}`;
+}
+
+function inspiredCanClose() {
+  return (state.inspiredRounds || 0) >= MIN_INSPIRED_ROUNDS;
+}
+
+function inspiredRoundsRemaining() {
+  return Math.max(0, MIN_INSPIRED_ROUNDS - (state.inspiredRounds || 0));
+}
+
+function resolveStepPrompt(track, step) {
+  if (state.trackKey === "inspirada" && step?.key === "loop") {
+    if (inspiredCanClose()) {
+      return "Escreva mais um pouco. Se o fio ja amadureceu, digite 'encerrar'.";
+    }
+    const remaining = inspiredRoundsRemaining();
+    return `Escreva mais um pouco. Ainda faltam ${remaining} rodada${remaining === 1 ? "" : "s"} antes do fechamento.`;
+  }
+  return step?.prompt || "";
 }
 
 function renderCardShell(innerHtml) {
-  return `<div class="card iza-fade" id="izaView">${innerHtml}</div>`;
+  return `<section class="card iza-panel-shell iza-fade" id="izaView">${innerHtml}</section>`;
 }
 
 function mountFadeIn() {
@@ -299,7 +305,7 @@ function renderHistoryNav(extraHtml = "") {
       <button class="button secondary" id="btnHistFwd" ${fwdDisabled}>Avançar</button>
       ${state.viewMode ? `<button class="button" id="btnHistLive">Retomar</button>` : ""}
       ${extraHtml || ""}
-      <div style="margin-left:auto;align-self:center;">${replayTag}</div>
+      <div class="iza-nav__status">${replayTag}</div>
     </div>
   `;
 }
@@ -368,8 +374,8 @@ const PRESENCES = {
     name: "IZA Discreta",
     mirror: "short",
     maxQuestions: 1,
-    softeners: ["", "Se fizer sentido,", "Talvez,", "Ok,"],
-    closings: ["", "Pode seguir.", "Quando quiser, continue."]
+    softeners: ["", "Se fizer sentido,", "Talvez,", "Pode ser que,"],
+    closings: ["", "Se quiser, siga.", "Continue quando fizer sentido."]
   },
   B: {
     key: "B",
@@ -415,6 +421,27 @@ function presenceMessage(p) {
     D: "Vou ficar quase invisível: pouco ruído e mais espaço pra você escrever."
   };
   return (base[p.key] || "") + " Podemos ajustar isso quando quiser.";
+}
+
+function presenceMessageText(p) {
+  if (!p) return "";
+  if (p.key === "H") {
+    const mix = state.presenceMix || {};
+    const parts = Object.entries(mix)
+      .filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k}: ${Math.round(v * 100)}%`)
+      .join(" · ");
+    return `Hoje sua IZA sera hibrida (${parts}). Ela alterna acolhimento, recorte e silencio conforme o modo como sua escrita pede companhia.`;
+  }
+
+  const base = {
+    A: "Vou aparecer de leve, abrindo espaco para voce escutar melhor o proprio texto.",
+    B: "Vou seguir perto, com calor e escuta, sem tomar o lugar da sua escrita.",
+    C: "Vou entrar com recorte e perguntas de precisao, para fazer a ideia se sustentar melhor.",
+    D: "Vou quase sumir: pouco ruido, quase nenhum comentario, mais campo para voce escrever."
+  };
+  return (base[p.key] || "") + " Se quiser, da para recalibrar isso depois.";
 }
 
 // -------------------- HYBRID PRESENCE --------------------
@@ -468,31 +495,54 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+function presencePhraseSets() {
+  return {
+    A: {
+      softeners: ["", "Se fizer sentido,", "Talvez,", "Pode ser que,"],
+      closings: ["", "Se quiser, siga.", "Continue quando fizer sentido."]
+    },
+    B: {
+      softeners: ["Entendi.", "Estou com voce.", "Obrigada por dividir isso.", "Vamos por partes."],
+      closings: ["Se quiser, eu sigo com voce.", "Pode ir no seu ritmo.", "Vamos com calma."]
+    },
+    C: {
+      softeners: ["Vamos ao nucleo.", "Certo. Vamos delimitar.", "Foco no ponto central."],
+      closings: ["Responda em uma frase.", "Agora sustente isso.", "Siga com precisao."]
+    },
+    D: {
+      softeners: [""],
+      closings: ["Continue.", "Mais.", ""]
+    }
+  };
+}
+
 function presenceWrap(p, coreText) {
   const mix = state.presenceMix;
+  const sets = presencePhraseSets();
   let soft = "";
   let close = "";
 
   if (p.key === "H" && mix) {
     soft =
       weightedPick(
-        PRESENCES.A.softeners,
-        PRESENCES.B.softeners,
-        PRESENCES.C.softeners,
-        PRESENCES.D.softeners,
+        sets.A.softeners,
+        sets.B.softeners,
+        sets.C.softeners,
+        sets.D.softeners,
         mix
       ) || "";
     close =
       weightedPick(
-        PRESENCES.A.closings,
-        PRESENCES.B.closings,
-        PRESENCES.C.closings,
-        PRESENCES.D.closings,
+        sets.A.closings,
+        sets.B.closings,
+        sets.C.closings,
+        sets.D.closings,
         mix
       ) || "";
   } else {
-    soft = pick(p.softeners || [""]);
-    close = pick(p.closings || [""]);
+    const current = sets[p.key] || sets.A;
+    soft = pick(current.softeners || [""]);
+    close = pick(current.closings || [""]);
   }
 
   const minimalNow =
@@ -1144,6 +1194,60 @@ function leadLine(userText) {
   return "";
 }
 
+function refinedPresenceClosing(p) {
+  const base = {
+    A: ["", "Se quiser, siga.", "Vale cavar mais um pouco.", "Continue quando a proxima frase aparecer."],
+    B: ["", "Pode ir no seu ritmo.", "Se quiser, eu sigo com voce.", "Ha algo ai que ainda pode florescer."],
+    C: ["", "Responda em uma frase.", "Nomeie melhor o ponto.", "Agora sustente isso."],
+    D: ["", "Siga."]
+  };
+
+  if (p.key === "H" && state.presenceMix) {
+    const mix = state.presenceMix;
+    const pickFrom =
+      (mix.D || 0) > 0.5 ? base.D :
+        (mix.C || 0) > 0.4 ? base.C :
+          (mix.B || 0) > 0.35 ? base.B : base.A;
+    return pick(pickFrom);
+  }
+
+  return pick(base[p.key] || base.A);
+}
+
+function refinedLeadLine(userText) {
+  const p = state.presence || PRESENCES.A;
+  const t = (userText || "").trim();
+  if (!t || p.key === "D") return "";
+
+  if (p.key === "H" && state.presenceMix) {
+    const mix = state.presenceMix;
+    if ((mix.D || 0) > 0.55) return "";
+    if ((mix.C || 0) > 0.45) return pick(["Vamos ao nucleo.", "Delimite o ponto central.", "Recorte melhor o que apareceu."]);
+    if ((mix.B || 0) > 0.35) return pick(["Estou com voce.", "Isso importa.", "Obrigada por trazer isso."]);
+    return pick(["Entendi.", "Certo.", "Vamos olhar isso melhor."]);
+  }
+
+  if (p.key === "A") return pick(["Entendi.", "Certo.", "Vamos deixar isso respirar."]);
+
+  if (p.key === "B") {
+    const ct = state.centerType;
+    const bank = [
+      "Obrigada por confiar isso ao texto.",
+      "Estou com voce, sem pressa.",
+      "Entendi. Isso pede escuta.",
+      ct === "ferida" ? "Isso toca num ponto sensivel." : "",
+      ct === "desejo" ? "Isso tem pulsacao." : "",
+      ct === "pergunta" ? "Essa pergunta esta viva." : "",
+      ct === "afirmacao" ? "Isso afirma algo importante." : ""
+    ].filter(Boolean);
+    return pick(bank);
+  }
+
+  if (p.key === "C") return pick(["Vamos ao nucleo.", "Seja preciso.", "Delimite o que esta em jogo."]);
+
+  return "";
+}
+
 function fixEmptyQuestion(qText) {
   const normalized = String(qText || "").trim();
   const hasEmptyQuotes =
@@ -1175,9 +1279,9 @@ function fixEmptyQuestion(qText) {
 }
 
 function composeReply(p, userText, mirror, qText, minimalistNow) {
-  const lead = leadLine(userText);
+  const lead = refinedLeadLine(userText);
   const lens = centerLensLine();
-  const closing = presenceClosing(p);
+  const closing = refinedPresenceClosing(p);
   const safeQuestion = ensureMeaningfulTemplateText(fixEmptyQuestion(qText), userText);
   const safeMirror = ensureMeaningfulTemplateText(mirror, userText);
 
@@ -1226,11 +1330,11 @@ function firmNeedsExpansion(p) {
 function askSevenWordsPrompt(userText) {
   const ct = state.centerType;
   const base =
-    ct === "ferida" ? "Complete em 7 palavras: o que encosta nessa ferida?" :
-      ct === "desejo" ? "Complete em 7 palavras: o que impede esse desejo?" :
-        ct === "pergunta" ? "Complete em 7 palavras: qual parte da pergunta pesa?" :
-          ct === "afirmacao" ? "Complete em 7 palavras: que prova sustenta isso?" :
-            "Complete em 7 palavras com lugar/gesto: o que você quer dizer?";
+    ct === "ferida" ? "Tente em 7 palavras: o que, de fato, encosta nessa ferida?" :
+      ct === "desejo" ? "Tente em 7 palavras: o que segura esse desejo agora?" :
+        ct === "pergunta" ? "Tente em 7 palavras: qual parte da pergunta pesa mais?" :
+          ct === "afirmacao" ? "Tente em 7 palavras: que prova sustenta isso?" :
+            "Tente em 7 palavras com lugar ou gesto: o que voce quer dizer?";
 
   const hook = userText ? `Você disse: “${swapPronouns(userText)}—”. ` : "";
   return hook + base;
@@ -1309,7 +1413,7 @@ function izaReply(userText) {
     }
   }
 
-  const fallbackQ = `Falando em “${fallbackUserAnchor(t)}”, qual parte pede mais clareza agora?`;
+  const fallbackQ = `Falando em “${fallbackUserAnchor(t)}”, o que aqui pede um nome mais preciso?`;
   return presenceWrap(p, composeReply(p, t, shortMirror(p, t), fallbackQ, false));
 }
 
@@ -1322,12 +1426,12 @@ function centerChoicePrompt(fragment) {
     return `“${frag}—”\nA) pergunta  B) afirmação  C) ferida  D) desejo\n(A/B/C/D ou escreva do seu jeito)`;
   }
   if (p.key === "C") {
-    return `Você disse: “${frag}—”. Classifique o núcleo:\nA) pergunta\nB) afirmação\nC) ferida\nD) desejo\nResponda Escreva do seu jeito.`;
+    return `Você disse: “${frag}—”. Classifique o núcleo:\nA) pergunta\nB) afirmação\nC) ferida\nD) desejo\nSe preferir, escreva do seu jeito.`;
   }
   if (p.key === "B") {
-    return `Ao ler “${frag}—”, eu sinto um núcleo aí.\nIsso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda Escreva do seu jeito..`;
+    return `Ao ler “${frag}—”, eu sinto um núcleo aí.\nIsso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nSe preferir, escreva do seu jeito.`;
   }
-  return `Quando você diz “${frag}—”, isso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nResponda Escreva do seu jeito..`;
+  return `Quando você diz “${frag}—”, isso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nSe preferir, escreva do seu jeito.`;
 }
 
 function interpretCenterChoice(text) {
@@ -1344,28 +1448,44 @@ function interpretCenterChoice(text) {
   return { type: choice, label: labelMap[choice] || "o seu próprio modo de dizer" };
 }
 
+function refinedCenterChoicePrompt(fragment) {
+  const p = state.presence || PRESENCES.A;
+  const frag = swapPronouns((fragment || "").trim());
+
+  if (p.key === "D") {
+    return `"${frag}"\nA) pergunta  B) afirmacao  C) ferida  D) desejo\n(A/B/C/D ou escreva do seu jeito)`;
+  }
+  if (p.key === "C") {
+    return `Voce disse: "${frag}". Classifique o nucleo com precisao:\nA) pergunta\nB) afirmacao\nC) ferida\nD) desejo\nSe preferir, nomeie do seu jeito.`;
+  }
+  if (p.key === "B") {
+    return `Ao ler "${frag}", eu sinto um nucleo vivo aqui.\nO que nomeia melhor isso:\nA) uma pergunta\nB) uma afirmacao\nC) uma ferida\nD) um desejo\nSe preferir, escreva do seu jeito.`;
+  }
+  return `Quando voce diz "${frag}", qual nome sustenta melhor esse nucleo?\nA) uma pergunta\nB) uma afirmacao\nC) uma ferida\nD) um desejo\nSe preferir, escreva do seu jeito.`;
+}
+
 // -------------------- TRACKS --------------------
 const TRACKS = {
   iniciante: {
-    name: "Trilha Iniciante (4 etapas)",
+    name: "Jornada Iniciante (4 passos)",
     steps: [
       {
         key: "nucleo",
-        prompt: "Etapa 1 — Núcleo\nEscreva livremente sobre seu tema.",
-        onUser: (t) => izaReply(t) + "\n\nAgora, em 1 frase: qual é o centro disso?"
+        prompt: "Passo 1 — Nucleo\nEscreva livremente sobre o que quer trabalhar hoje.",
+        onUser: (t) => izaReply(t) + "\n\nAgora nomeie o centro disso em 1 frase."
       },
       {
         key: "centro",
-        prompt: "Em 1 frase: qual é o centro disso?",
+        prompt: "Em 1 frase, qual e o centro disso?",
         onUser: (t) => {
           state.centerType = null;
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
-          return centerChoicePrompt(frag);
+          return refinedCenterChoicePrompt(frag);
         }
       },
       {
         key: "tipo_centro",
-        prompt: "Escreva do seu jeito.",
+        prompt: "Escolha um caminho ou nomeie com suas palavras.",
         onUser: (t) => {
           const parsed = interpretCenterChoice(t);
           state.centerType = parsed.type;
@@ -1375,12 +1495,12 @@ const TRACKS = {
               p.key === "C" ? `Registrado: ${parsed.label}.` :
                 p.key === "B" ? `Certo — vamos tratar o centro como ${parsed.label}.` :
                   `Ok — vamos tratar o centro como ${parsed.label}.`;
-          return `${lead}\n\nEtapa 2 — Atrito\nO que está em jogo aqui (conflito, dúvida, desejo, risco)?`;
+          return `${lead}\n\nPasso 2 — Atrito\nO que esta em jogo aqui: conflito, desejo, risco ou duvida?`;
         }
       },
       {
         key: "atrito",
-        prompt: "Etapa 2 — Atrito\nO que está em jogo aqui?",
+        prompt: "Passo 2 — Atrito\nO que esta em jogo aqui?",
         onUser: (t) => {
           const hint =
             state.centerType === "pergunta" ? "Qual parte da pergunta dói mais?" :
@@ -1388,20 +1508,20 @@ const TRACKS = {
                 state.centerType === "ferida" ? "O que encosta nessa ferida?" :
                   state.centerType === "desejo" ? "O que atrapalha esse desejo?" :
                     "Qual é a tensão aqui?";
-          return izaReply(t) + `\n\nEtapa 3 — Cena\nTraga uma cena concreta (lugar + alguém + um gesto). (${hint})`;
+          return izaReply(t) + `\n\nPasso 3 — Cena\nTraga uma cena concreta: lugar, alguem e um gesto. ${hint}`;
         }
       },
       {
         key: "cena",
-        prompt: "Etapa 3 — Cena\nTraga uma cena concreta (lugar + alguém + um gesto).",
-        onUser: (t) => izaReply(t) + "\n\nEtapa 4 — Frase que fica\nEscreva o verso/frase que não pode faltar."
+        prompt: "Passo 3 — Cena\nTraga uma cena concreta: lugar, alguem e um gesto.",
+        onUser: (t) => izaReply(t) + "\n\nPasso 4 — Frase que fica\nEscreva a frase que merece permanecer."
       },
       {
         key: "frase_final",
-        prompt: "Etapa 4 — Frase que fica\nEscreva o verso/frase que não pode faltar.",
+        prompt: "Passo 4 — Frase que fica\nEscreva a frase que merece permanecer.",
         onUser: (t) => {
           state.finalDraft = (t || "").trim();
-          return izaReply(t) + "\n\nFechamos. Vou preparar seu registro.";
+          return izaReply(t) + "\n\nFechamos esta volta. Vou preparar o seu registro.";
         },
         endScreen: true
       }
@@ -1409,25 +1529,25 @@ const TRACKS = {
   },
 
   intermediaria: {
-    name: "Trilha Intermediária (7 etapas)",
+    name: "Jornada Intermediaria (7 passos)",
     steps: [
       {
         key: "tema",
-        prompt: "Etapa 1 — Tema\nEm poucas palavras, qual é o tema?",
-        onUser: (t) => izaReply(t) + "\n\nEtapa 2 — Centro (1 frase)\nQual é o centro disso em 1 frase?"
+        prompt: "Passo 1 — Tema\nEm poucas palavras, qual e o tema?",
+        onUser: (t) => izaReply(t) + "\n\nPasso 2 — Centro\nDiga o centro disso em 1 frase."
       },
       {
         key: "centro",
-        prompt: "Etapa 2 — Centro (1 frase)\nQual é o centro disso em 1 frase?",
+        prompt: "Passo 2 — Centro\nDiga o centro disso em 1 frase.",
         onUser: (t) => {
           state.centerType = null;
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
-          return centerChoicePrompt(frag);
+          return refinedCenterChoicePrompt(frag);
         }
       },
       {
         key: "tipo_centro",
-        prompt: "Escreva do seu jeito.",
+        prompt: "Escolha um caminho ou formule do seu jeito.",
         onUser: (t) => {
           const parsed = interpretCenterChoice(t);
           state.centerType = parsed.type;
@@ -1437,35 +1557,35 @@ const TRACKS = {
               p.key === "C" ? `Registrado: ${parsed.label}.` :
                 p.key === "B" ? `Certo — tratemos o centro como ${parsed.label}.` :
                   `Ok — tratemos o centro como ${parsed.label}.`;
-          return `${lead}\n\nEtapa 3 — Atrito\nO que está em jogo (conflito, regra, risco, desejo)?`;
+          return `${lead}\n\nPasso 3 — Atrito\nO que esta em jogo: conflito, regra, risco ou desejo?`;
         }
       },
       {
         key: "atrito",
-        prompt: "Etapa 3 — Atrito\nO que está em jogo?",
-        onUser: (t) => izaReply(t) + "\n\nEtapa 4 — Concreto\nTraga uma cena/fala/gesto/lugar onde isso aparece."
+        prompt: "Passo 3 — Atrito\nO que esta em jogo?",
+        onUser: (t) => izaReply(t) + "\n\nPasso 4 — Concreto\nMostre onde isso aparece: cena, fala, gesto ou lugar."
       },
       {
         key: "concreto",
-        prompt: "Etapa 4 — Concreto\nOnde isso aparece de forma concreta?",
-        onUser: (t) => izaReply(t) + "\n\nEtapa 5 — Contraste\nDiga duas forças em oposição (ex.: medo × vontade)."
+        prompt: "Passo 4 — Concreto\nOnde isso aparece de forma concreta?",
+        onUser: (t) => izaReply(t) + "\n\nPasso 5 — Contraste\nNomeie duas forcas em tensao (ex.: medo x vontade)."
       },
       {
         key: "contraste",
-        prompt: "Etapa 5 — Contraste\nDuas forças em oposição:",
-        onUser: (t) => izaReply(t) + "\n\nEtapa 6 — Síntese (3 linhas)\nResuma tudo em 3 linhas."
+        prompt: "Passo 5 — Contraste\nDuas forcas em tensao:",
+        onUser: (t) => izaReply(t) + "\n\nPasso 6 — Sintese\nReuna tudo em 3 linhas."
       },
       {
         key: "sintese",
-        prompt: "Etapa 6 — Síntese (3 linhas)\nResuma tudo em 3 linhas.",
-        onUser: (t) => izaReply(t) + "\n\nEtapa 7 — Forma final\nEscreva a versão que você levaria adiante."
+        prompt: "Passo 6 — Sintese\nReuna tudo em 3 linhas.",
+        onUser: (t) => izaReply(t) + "\n\nPasso 7 — Forma final\nEscreva a versao que vale levar adiante."
       },
       {
         key: "forma_final",
-        prompt: "Etapa 7 — Forma final\nEscreva a versão final.",
+        prompt: "Passo 7 — Forma final\nEscreva a versao que voce quer sustentar.",
         onUser: (t) => {
           state.finalDraft = (t || "").trim();
-          return izaReply(t) + "\n\nFechamos. Vou preparar seu registro.";
+          return izaReply(t) + "\n\nFechamos esta travessia. Vou preparar o seu registro.";
         },
         endScreen: true
       }
@@ -1473,25 +1593,25 @@ const TRACKS = {
   },
 
   inspirada: {
-    name: "Trilha Inspirada (conversa aberta)",
+    name: "Jornada Inspirada (conversa aberta)",
     steps: [
       {
         key: "abertura",
-        prompt: "Sobre o que você quer escrever hoje?",
-        onUser: (t) => izaReply(t) + "\n\nSe tivesse que dizer em 1 frase: qual é o centro disso?"
+        prompt: "Sobre o que voce quer escrever hoje?",
+        onUser: (t) => izaReply(t) + "\n\nSe fosse nomear o centro em 1 frase, como diria?"
       },
       {
         key: "centro",
-        prompt: "Em 1 frase: qual é o centro disso?",
+        prompt: "Em 1 frase, qual e o centro disso?",
         onUser: (t) => {
           state.centerType = null;
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
-          return centerChoicePrompt(frag);
+          return refinedCenterChoicePrompt(frag);
         }
       },
       {
         key: "tipo_centro",
-        prompt: "Escreva do seu jeito.",
+        prompt: "Escolha um caminho ou diga do seu jeito.",
         onUser: (t) => {
           const parsed = interpretCenterChoice(t);
           state.centerType = parsed.type;
@@ -1501,12 +1621,12 @@ const TRACKS = {
               p.key === "C" ? `Registrado: ${parsed.label}.` :
                 p.key === "B" ? `Certo — vamos caminhar com ${parsed.label}.` :
                   `Ok — vamos caminhar com ${parsed.label}.`;
-          return `${lead}\n\nAgora segue no fluxo: escreva mais um pouco (sem se vigiar).`;
+          return `${lead}\n\nAgora siga no fluxo: escreva mais um pouco, sem vigiar demais a primeira resposta.`;
         }
       },
       {
         key: "loop",
-        prompt: "Escreva mais um pouco. (Digite 'encerrar' quando quiser.)",
+        prompt: "Escreva mais um pouco.",
         onUser: (t) => {
           state.inspiredRounds += 1;
           return izaReply(t);
@@ -1524,12 +1644,14 @@ function resetConversationRuntime() {
   state.turns = [];
   state.centerType = null;
   state.finalDraft = "";
+  state.finalClosure = null;
   state.sent = false;
 
   state.registerStatus = "idle";
   state.registerError = "";
 
   state.registerFinalDone = false;
+  state.registerGiftDone = false;
 
   IZA_ENGINE.memory = [];
   IZA_ENGINE.usedRecently = [];
@@ -1555,13 +1677,23 @@ function startTrack(key) {
 function showStep() {
   const track = TRACKS[state.trackKey];
   const step = track.steps[state.stepIndex];
+  const prompt = resolveStepPrompt(track, step);
 
-  showPrompt(track.name, step.prompt, (text) => {
+  showPrompt(track.name, prompt, (text) => {
     const userText = (text || "").trim();
     if (!userText) return;
 
     if (state.trackKey === "inspirada" && userText.toLowerCase().startsWith("encerrar")) {
-      showFinalizeScreen();
+      if (inspiredCanClose()) {
+        showFinalizeScreen();
+        return;
+      }
+
+      const remaining = inspiredRoundsRemaining();
+      showIza(
+        `Ainda não vou fechar. Quero te ouvir por pelo menos ${MIN_INSPIRED_ROUNDS} rodadas nessa trilha.\n\nFaltam ${remaining} rodada${remaining === 1 ? "" : "s"}. Segue mais um pouco no fluxo.`,
+        () => showStep()
+      );
       return;
     }
 
@@ -1608,23 +1740,23 @@ function renderPromptScreen(payload, fromHistory = false) {
   render(
     renderCardShell(`
       <div class="iza-top">
-        <div>
-          <h2 style="margin:0;">${escapeHtml(title)}</h2>
+        <div class="iza-top__main">
+          <h2 class="iza-title">${escapeHtml(title)}</h2>
           ${progHtml}
         </div>
-        <div style="text-align:right;">
-          <div style="font-weight:700;">${escapeHtml(userDisplayName())}</div>
+        <div class="iza-top__side">
+          <div class="iza-user">${escapeHtml(userDisplayName())}</div>
           <div class="iza-sub">${escapeHtml(izaDisplayName())}</div>
         </div>
       </div>
 
-      <p style="margin-top:1rem;">${escapeHtml(question).replace(/\n/g, "<br>")}</p>
+      <p class="iza-question">${escapeHtml(question).replace(/\n/g, "<br>")}</p>
 
-      <textarea id="txt" class="input-area" rows="5" ${canSend ? "" : "disabled"} placeholder="${canSend ? "" : "Resposta já enviada (não exibida)"}"></textarea>
+      <textarea id="txt" class="input-area" rows="5" ${canSend ? "" : "disabled"} placeholder="${canSend ? "" : "Esta resposta ja foi registrada."}"></textarea>
 
       ${canSend
-        ? `<button id="btnSend" class="button">Enviar</button>`
-        : `<div class="iza-hint">Você está revisando uma etapa anterior. O texto que foi enviado não aparece aqui.</div>`
+        ? `<button id="btnSend" class="button">Registrar resposta</button>`
+        : `<div class="iza-hint">Voce esta revendo uma etapa anterior. O texto enviado fica guardado no registro.</div>`
       }
 
       ${renderHistoryNav("")}
@@ -1656,23 +1788,23 @@ function renderIzaScreen(payload, fromHistory = false) {
   render(
     renderCardShell(`
       <div class="iza-top">
-        <div>
-          <h2 style="margin:0;">${escapeHtml(izaDisplayName())}</h2>
+        <div class="iza-top__main">
+          <h2 class="iza-title">${escapeHtml(izaDisplayName())}</h2>
           ${progHtml}
         </div>
-        <div style="text-align:right;">
-          <div style="font-weight:700;">${escapeHtml(userDisplayName())}</div>
+        <div class="iza-top__side">
+          <div class="iza-user">${escapeHtml(userDisplayName())}</div>
           <div class="iza-sub">em diálogo</div>
         </div>
       </div>
 
-      <div class="message" style="margin-top:1rem;">
+      <div class="message iza-message">
         ${escapeHtml(text).replace(/\n/g, "<br>")}
       </div>
 
       ${canContinue
-        ? `<button class="button" id="btnNext">Continuar</button>`
-        : `<div class="iza-hint">Você está revisando uma fala anterior.</div>`
+        ? `<button class="button" id="btnNext">Seguir</button>`
+        : `<div class="iza-hint">Voce esta revendo uma fala anterior da IZA.</div>`
       }
 
       ${renderHistoryNav("")}
@@ -1720,21 +1852,223 @@ function showIza(text, next) {
 // -------------------- FINALIZE SCREEN (COPY / DOWNLOAD / SEND STATUS) --------------------
 function buildTranscript() {
   const header =
-    `IZA no Cordel 2.0 — Registro\n` +
+    `IZA no Cordel 2.0 - Registro\n` +
     `Nome: ${state.name}\nEmail: ${state.email}\n` +
-    `Município: ${state.municipio || ""}\nEstado: ${state.estadoUF || ""}\nOrigem: ${state.origem || ""}\n` +
-    `Trilha: ${state.trackKey}\nPresença: ${state.presence?.name || state.presenceKey}\n` +
-    `Início: ${state.startedAtISO}\nFim: ${nowISO()}\n` +
+    `Municipio: ${state.municipio || ""}\nEstado: ${state.estadoUF || ""}\nOrigem: ${state.origem || ""}\n` +
+    `Trilha: ${state.trackKey}\nPresenca: ${state.presence?.name || state.presenceKey}\n` +
+    `Inicio: ${state.startedAtISO}\nFim: ${nowISO()}\n` +
     `---\n\n`;
 
   const body = state.turns
     .map((t) => {
-      const who = t.role === "user" ? "VOCÊ" : "IZA";
+      const who = t.role === "user" ? "VOCE" : "IZA";
       return `${who}:\n${t.text}\n`;
     })
     .join("\n");
 
   return header + body;
+}
+
+function userTurnsOnly() {
+  return state.turns.filter((t) => t.role === "user" && String(t.text || "").trim());
+}
+
+function normalizeInlineText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+const JOURNEY_STOPWORDS = new Set([
+  "a", "ao", "aos", "aquela", "aquele", "aqueles", "as", "ate", "com", "como", "da", "das",
+  "de", "dela", "dele", "deles", "depois", "do", "dos", "e", "ela", "ele", "eles", "em",
+  "entre", "era", "essa", "esse", "esta", "estao", "estar", "este", "eu", "foi", "ha",
+  "isso", "isto", "ja", "la", "mais", "mas", "me", "mesmo", "meu", "minha", "muito", "na",
+  "nas", "nem", "no", "nos", "nossa", "nosso", "num", "numa", "o", "os", "ou", "para",
+  "pela", "pelas", "pelo", "pelos", "por", "porque", "pra", "que", "quem", "se", "sem",
+  "ser", "seu", "sua", "tambem", "te", "tem", "tinha", "to", "tu", "um", "uma", "voce",
+  "voces", "texto", "escrita", "coisa", "aqui", "agora", "hoje", "ontem", "amanha", "gente",
+  "tipo", "sobre", "fazer", "feito", "tenho", "tava", "estou", "quero", "queria", "vai",
+  "vou", "fica", "ficou", "so", "mim"
+]);
+
+function clipText(text, max = 160) {
+  const value = normalizeInlineText(text);
+  if (!value) return "";
+  return value.length > max ? value.slice(0, max - 3).trim() + "..." : value;
+}
+
+function clipMultilineText(text, max = 320) {
+  const value = String(text || "").replace(/\r/g, "").trim();
+  if (!value) return "";
+  return value.length > max ? value.slice(0, max - 3).trim() + "..." : value;
+}
+
+function normalizeSearchText(text) {
+  return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function keywordRoot(token) {
+  return token.length <= 5 ? token : token.slice(0, 5);
+}
+
+function tokenizeForKeywords(text) {
+  return normalizeSearchText(text)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4 && !JOURNEY_STOPWORDS.has(token));
+}
+
+function listToNaturalLanguage(items) {
+  const values = (items || []).filter(Boolean);
+  if (!values.length) return "";
+  if (values.length === 1) return values[0];
+  if (values.length === 2) return `${values[0]} e ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")} e ${values[values.length - 1]}`;
+}
+
+function extractJourneyKeywords() {
+  const counts = Object.create(null);
+  const seenRoots = new Set();
+  const userTexts = userTurnsOnly().map((t) => normalizeInlineText(t.text)).filter(Boolean);
+  const weightedSources = [
+    { text: state.finalDraft || "", weight: 4 },
+    { text: extractEmergentPhrase(), weight: 3 },
+    { text: userTexts.slice(-2).join(" "), weight: 2 },
+    { text: userTexts.join(" "), weight: 1 }
+  ];
+
+  weightedSources.forEach(({ text, weight }) => {
+    tokenizeForKeywords(text).forEach((token) => {
+      counts[token] = (counts[token] || 0) + weight;
+    });
+  });
+
+  if (state.centerType && !["", "livre"].includes(state.centerType)) {
+    counts[state.centerType] = (counts[state.centerType] || 0) + 2;
+  }
+
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+    .map(([token]) => token)
+    .filter((token) => {
+      const root = keywordRoot(token);
+      if (seenRoots.has(root)) return false;
+      seenRoots.add(root);
+      return true;
+    })
+    .slice(0, 6);
+}
+
+function buildJourneySynthesis(summary, keywords) {
+  const trackName = (TRACKS[state.trackKey]?.name || "jornada").replace(/\s*\([^)]*\)\s*/g, "").trim();
+  const focus = listToNaturalLanguage((keywords || []).slice(0, 3));
+  const centerMap = {
+    pergunta: "uma pergunta que pedia desdobramento",
+    afirmacao: "uma afirmacao que precisava sustento",
+    ferida: "uma ferida que pediu nome e contorno",
+    desejo: "um desejo que buscou forma",
+    livre: "um nucleo ainda aberto"
+  };
+
+  const lines = [];
+  lines.push(
+    focus
+      ? `Na ${trackName.toLowerCase()}, seu texto foi abrindo caminho em torno de ${focus}.`
+      : `Na ${trackName.toLowerCase()}, seu texto foi abrindo caminho e encontrando um eixo proprio.`
+  );
+
+  if (state.centerType) {
+    lines.push(`No percurso, apareceu ${centerMap[state.centerType] || "um nucleo que foi se revelando melhor"}.`);
+  } else if (
+    summary.firstText &&
+    summary.lastText &&
+    normalizeInlineText(summary.firstText) !== normalizeInlineText(summary.lastText)
+  ) {
+    lines.push("Do primeiro impulso ao fechamento, a escrita ganhou mais nitidez e recorte.");
+  } else {
+    lines.push("Ao longo da conversa, a ideia foi se deixando ver com mais clareza.");
+  }
+
+  if (summary.emergentPhrase) {
+    lines.push(`Ficou ecoando esta linha: "${clipText(summary.emergentPhrase, 120)}".`);
+  } else if (summary.lastText) {
+    lines.push(`No fim, ficou mais visivel isto: "${clipText(summary.lastText, 120)}".`);
+  }
+
+  const synthesis = lines.join(" ").replace(/\s+/g, " ").trim();
+  return synthesis.length > 420 ? synthesis.slice(0, 417).trim() + "..." : synthesis;
+}
+
+function buildFallbackLiteraryGift(keywords) {
+  const seed = keywords[0] || "palavra";
+  const companion = keywords[1] || "eco";
+  return {
+    source: "fallback",
+    seed,
+    intro: "Nao encontrei um eco direto na biblioteca agora, mas IZA nao te deixa sair de maos vazias.",
+    fragment: `Guarde ${seed}. Quando a trilha parece terminar, ela ainda conversa com ${companion}. O que ficou vivo aqui talvez seja o comeco de outra frase.`,
+    author: "IZA",
+    title: "Bencao de encerramento",
+    matchedKeywords: [seed, companion].filter(Boolean)
+  };
+}
+
+function normalizeGiftResponse(rawGift, payload) {
+  if (!rawGift || !rawGift.fragment) {
+    return buildFallbackLiteraryGift(payload.keywords || []);
+  }
+
+  const fragment = clipMultilineText(rawGift.fragment, 320);
+  if (!fragment) return buildFallbackLiteraryGift(payload.keywords || []);
+
+  return {
+    source: rawGift.source || "poems_sheet",
+    seed: rawGift.seed || payload.keywords?.[0] || "",
+    intro:
+      rawGift.intro ||
+      "Antes de encerrar, recolhi alguns rastros do que voce deixou pelo caminho e encontrei este eco.",
+    fragment,
+    author: rawGift.author || "Autor desconhecido",
+    title: rawGift.title || "Trecho sem titulo",
+    matchedKeywords: Array.isArray(rawGift.matchedKeywords)
+      ? rawGift.matchedKeywords.filter(Boolean).slice(0, 5)
+      : (payload.keywords || []).slice(0, 3)
+  };
+}
+
+function extractEmergentPhrase() {
+  const source =
+    normalizeInlineText(state.finalDraft) ||
+    normalizeInlineText(userTurnsOnly().slice(-1)[0]?.text) ||
+    normalizeInlineText(userTurnsOnly()[0]?.text);
+
+  if (!source) return "";
+
+  const sentences = source.match(/[^.!?]+[.!?]?/g) || [source];
+  const best =
+    sentences.map((s) => normalizeInlineText(s)).find((s) => s.length >= 24) ||
+    normalizeInlineText(sentences[0]);
+
+  return best.length > 180 ? best.slice(0, 177).trim() + "..." : best;
+}
+
+function buildFinalSummary() {
+  const userTurns = userTurnsOnly();
+  const base = {
+    firstText: normalizeInlineText(userTurns[0]?.text),
+    lastText:
+      normalizeInlineText(state.finalDraft) ||
+      normalizeInlineText(userTurns.slice(-1)[0]?.text),
+    emergentPhrase: extractEmergentPhrase()
+  };
+  const keywords = extractJourneyKeywords();
+  return {
+    ...base,
+    keywords,
+    journeySynthesis: buildJourneySynthesis(base, keywords)
+  };
 }
 
 function buildFinalDraftBlock() {
@@ -1743,18 +2077,180 @@ function buildFinalDraftBlock() {
   return `\n\n---\nTEXTO FINAL (rascunho):\n${draft}\n`;
 }
 
+function buildFinalRecordTranscript(payload) {
+  const parts = [payload.baseTranscript || buildTranscript() + buildFinalDraftBlock()];
+
+  if (payload.journeySynthesis) {
+    parts.push(`\n---\nSINTESE DA JORNADA:\n${payload.journeySynthesis}\n`);
+  }
+
+  if (payload.keywords?.length) {
+    parts.push(`\nPALAVRAS-CHAVE:\n${payload.keywords.join(", ")}\n`);
+  }
+
+  if (payload.literaryGift?.fragment) {
+    parts.push(
+      `\nPRESENTE LITERARIO DA IZA:\n${payload.literaryGift.fragment}\n` +
+      `Credito: ${payload.literaryGift.author || "IZA"} - ${payload.literaryGift.title || "Presente"}\n`
+    );
+  }
+
+  return parts.join("");
+}
+
+function renderKeywordTags(keywords) {
+  const values = (keywords || []).filter(Boolean);
+  if (!values.length) return "";
+  return `
+    <div class="iza-keywords">
+      ${values.map((keyword) => `<span class="iza-keyword">${escapeHtml(keyword)}</span>`).join("")}
+    </div>
+  `;
+}
+
+function renderLiteraryGift(payload) {
+  const keywordsHtml = renderKeywordTags(payload.keywords || []);
+
+  if (payload.literaryGiftStatus === "loading") {
+    return `
+      <div class="iza-gift">
+        <p class="iza-section-title"><strong>Presente literario da IZA</strong></p>
+        <p class="iza-copy">Antes de encerrar, recolhi alguns rastros do que voce deixou pelo caminho.</p>
+        <p class="iza-copy iza-copy--soft">Separei palavras que insistiram em permanecer acesas.</p>
+        ${keywordsHtml}
+        <div class="message">IZA esta procurando um eco poetico para essas pistas...</div>
+      </div>
+    `;
+  }
+
+  const gift = payload.literaryGift || buildFallbackLiteraryGift(payload.keywords || []);
+  const credit = [gift.author, gift.title].filter(Boolean).join(" - ");
+
+  return `
+    <div class="iza-gift">
+      <p class="iza-section-title"><strong>Presente literario da IZA</strong></p>
+      <p class="iza-copy">Nem sempre a trilha termina onde acaba. As vezes ela ecoa em outro verso.</p>
+      <p class="iza-copy iza-copy--soft">${escapeHtml(gift.intro || "")}</p>
+      ${keywordsHtml}
+      <div class="message">${escapeHtml(gift.fragment || "").replace(/\n/g, "<br>")}</div>
+      <p class="iza-gift__meta">${escapeHtml(credit)}</p>
+    </div>
+  `;
+}
+
+function updateLatestFinalViewPayload(patch) {
+  for (let i = state.viewHistory.length - 1; i >= 0; i--) {
+    if (state.viewHistory[i].type !== "final") continue;
+    state.viewHistory[i].payload = { ...state.viewHistory[i].payload, ...patch };
+    break;
+  }
+  saveStateToLocal();
+}
+
+function updateFinalClosureUI() {
+  if (!state.finalClosure) return;
+
+  const giftNode = document.getElementById("giftPanel");
+  if (giftNode) giftNode.innerHTML = renderLiteraryGift(state.finalClosure);
+
+  const outNode = document.getElementById("out");
+  if (outNode) outNode.value = state.finalClosure.transcript || "";
+}
+
+function requestLiteraryGift(payload) {
+  return new Promise((resolve) => {
+    const callbackName =
+      "__izaGiftCb_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+    const params = new URLSearchParams({
+      action: "gift",
+      callback: callbackName,
+      keywords: (payload.keywords || []).slice(0, 8).join("|"),
+      summary: clipText(payload.journeySynthesis, 280),
+      seedText: clipText(
+        [payload.emergentPhrase, payload.lastText, state.finalDraft].filter(Boolean).join(" || "),
+        520
+      ),
+      trackKey: state.trackKey || "",
+      presenceKey: state.presenceKey || ""
+    });
+
+    const script = document.createElement("script");
+    let timer = null;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      try {
+        delete window[callbackName];
+      } catch (_) {
+        window[callbackName] = undefined;
+      }
+    };
+
+    window[callbackName] = (data) => {
+      cleanup();
+      resolve(data || { ok: false, error: "empty_response" });
+    };
+
+    timer = window.setTimeout(() => {
+      cleanup();
+      resolve({ ok: false, error: "timeout" });
+    }, GIFT_LOOKUP_TIMEOUT_MS);
+
+    script.src = `${WEBAPP_URL}?${params.toString()}`;
+    script.async = true;
+    script.onerror = () => {
+      cleanup();
+      resolve({ ok: false, error: "network" });
+    };
+
+    document.body.appendChild(script);
+  });
+}
+
+function syncLiteraryGiftForFinal() {
+  const payload = state.finalClosure;
+  if (!payload || payload.literaryGiftStatus !== "loading") return;
+
+  requestLiteraryGift(payload)
+    .then((response) => {
+      const gift = normalizeGiftResponse(response?.gift, payload);
+      state.finalClosure = {
+        ...state.finalClosure,
+        literaryGift: gift,
+        literaryGiftStatus: gift.source === "fallback" ? "fallback" : "ready"
+      };
+      state.finalClosure.transcript = buildFinalRecordTranscript(state.finalClosure);
+      updateLatestFinalViewPayload(state.finalClosure);
+      updateFinalClosureUI();
+      safeRegisterFinalGift(state.finalClosure);
+    })
+    .catch(() => {
+      const gift = buildFallbackLiteraryGift(payload.keywords || []);
+      state.finalClosure = {
+        ...state.finalClosure,
+        literaryGift: gift,
+        literaryGiftStatus: "fallback"
+      };
+      state.finalClosure.transcript = buildFinalRecordTranscript(state.finalClosure);
+      updateLatestFinalViewPayload(state.finalClosure);
+      updateFinalClosureUI();
+      safeRegisterFinalGift(state.finalClosure);
+    });
+}
+
 function renderSendStatus() {
-  if (state.registerStatus === "sending") return "Enviando registro…";
+  if (state.registerStatus === "sending") return "IZA esta guardando sua sintese e seu registro...";
 
   if (state.registerStatus === "sent") {
-    return "Registro enviado com sucesso! Se você informou um e-mail válido, uma cópia do seu laudo foi enviada para lá. Caso não receba, você pode solicitar seu escrito indicando seu nome e email para <strong>contato@cordel2pontozero.com</strong>";
+    return "Registro guardado. Se voce informou um e-mail valido, a sintese e o presente literario seguem em envio sem travar o encerramento.";
   }
 
   if (state.registerStatus === "failed") {
-    return `Falha ao enviar registro automático (${state.registerError || "erro de rede"}). Por favor, copie seu texto abaixo e solicite seu laudo enviando para <strong>contato@cordel2pontozero.com</strong>`;
+    return `Nao consegui registrar automaticamente (${state.registerError || "erro de rede"}). Seu fechamento ficou aqui na tela: copie o registro abaixo se quiser preservar tudo agora.`;
   }
 
-  return "Preparando envio…";
+  return "Preparando o encerramento...";
 }
 
 function updateSendStatusUI() {
@@ -1763,33 +2259,73 @@ function updateSendStatusUI() {
 }
 
 function renderFinalScreen(payload, fromHistory = false) {
+  const summaryBlocks = [
+    payload.firstText
+      ? `
+        <div class="iza-summary-item">
+          <p class="iza-section-title"><strong>Primeira escrita</strong></p>
+          <div class="message">${escapeHtml(payload.firstText)}</div>
+        </div>`
+      : "",
+    payload.lastText
+      ? `
+        <div class="iza-summary-item">
+          <p class="iza-section-title"><strong>Ultima versao</strong></p>
+          <div class="message">${escapeHtml(payload.lastText)}</div>
+        </div>`
+      : "",
+    payload.emergentPhrase
+      ? `
+        <div class="iza-summary-item">
+          <p class="iza-section-title"><strong>Frase emergente</strong></p>
+          <div class="message">${escapeHtml(payload.emergentPhrase)}</div>
+        </div>`
+      : ""
+  ].filter(Boolean).join("");
+
+  const synthesisHtml = payload.journeySynthesis
+    ? `
+      <div class="iza-gift">
+        <p class="iza-section-title"><strong>Sintese da jornada</strong></p>
+        <div class="message">${escapeHtml(payload.journeySynthesis)}</div>
+      </div>
+    `
+    : "";
+
   render(
     renderCardShell(`
       <div class="iza-top">
-        <div>
-          <h2 style="margin:0;">Seu registro</h2>
-          <div class="iza-sub">${escapeHtml(userDisplayName())} · ${escapeHtml(izaDisplayName())}</div>
+        <div class="iza-top__main">
+          <h2 class="iza-title">Encerramento da jornada</h2>
+          <div class="iza-sub">${escapeHtml(userDisplayName())} - ${escapeHtml(izaDisplayName())}</div>
         </div>
-        <div style="text-align:right;">
+        <div class="iza-top__side">
           <div class="iza-chip">Final</div>
         </div>
       </div>
 
-      <p id="sendStatus" style="opacity:.85;margin-top:1rem;">
+      <p id="sendStatus" class="iza-status iza-status--soft">
         ${renderSendStatus()}
       </p>
 
-      <p><strong>Texto para copiar/colar</strong></p>
-      <textarea id="out" class="input-area" rows="12">${escapeHtml(payload.transcript)}</textarea>
+      ${summaryBlocks ? `<div class="iza-summary-grid">${summaryBlocks}</div>` : ""}
+      ${synthesisHtml}
 
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem;">
-        <button class="button" onclick="copyOut()">Copiar</button>
-        <button class="button" onclick="downloadTxt()">Baixar .txt</button>
-        <button class="button" style="background:#a0896a;" onclick="location.reload()">Novo texto</button>
+      <div id="giftPanel">
+        ${renderLiteraryGift(payload)}
       </div>
 
-      <p style="opacity:.7;margin-top:1rem;">
-        Você já tem tudo aqui para salvar.
+      <p class="iza-section-title"><strong>Registro completo</strong></p>
+      <textarea id="out" class="input-area" rows="14">${escapeHtml(payload.transcript)}</textarea>
+
+      <div class="iza-actions">
+        <button class="button" onclick="copyOut()">Copiar registro</button>
+        <button class="button" onclick="downloadTxt()">Baixar .txt</button>
+        <button class="button ritual" onclick="location.reload()">Comecar outro texto</button>
+      </div>
+
+      <p class="iza-copy iza-copy--quiet">
+        Seu percurso ficou guardado com sintese, palavras-chave e um eco final da IZA.
       </p>
 
       ${renderHistoryNav("")}
@@ -1800,15 +2336,15 @@ function renderFinalScreen(payload, fromHistory = false) {
   bindHistoryNavHandlers();
 
   window.copyOut = async function () {
-    const txt = el("out").value;
-    try {
-      await navigator.clipboard.writeText(txt);
-      alert("Copiado!");
-    } catch (e) {
-      el("out").select();
-      document.execCommand("copy");
-      alert("Copiado!");
-    }
+      const txt = el("out").value;
+      try {
+        await navigator.clipboard.writeText(txt);
+        alert("Registro copiado.");
+      } catch (e) {
+        el("out").select();
+        document.execCommand("copy");
+        alert("Registro copiado.");
+      }
   };
 
   window.downloadTxt = function () {
@@ -1826,12 +2362,21 @@ function renderFinalScreen(payload, fromHistory = false) {
 }
 
 function showFinalizeScreen() {
-  safeRegisterFinal();
+  const summary = buildFinalSummary();
+  const payload = {
+    ...summary,
+    baseTranscript: buildTranscript() + buildFinalDraftBlock(),
+    literaryGift: null,
+    literaryGiftStatus: "loading"
+  };
 
-  const transcript = buildTranscript() + buildFinalDraftBlock();
+  payload.transcript = buildFinalRecordTranscript(payload);
+  state.finalClosure = payload;
 
-  pushView({ type: "final", payload: { transcript } });
-  renderFinalScreen({ transcript }, false);
+  safeRegisterFinal(payload);
+  pushView({ type: "final", payload: state.finalClosure });
+  renderFinalScreen(state.finalClosure, false);
+  syncLiteraryGiftForFinal();
 }
 
 // -------------------- REGISTER (3 etapas) --------------------
@@ -1912,7 +2457,7 @@ async function safeRegisterChoice() {
   }
 }
 
-async function safeRegisterFinal() {
+async function safeRegisterFinal(finalPayload) {
   if (state.registerFinalDone) return;
   state.registerFinalDone = true;
 
@@ -1925,8 +2470,12 @@ async function safeRegisterFinal() {
     endedAtISO: nowISO(),
     page: state.pageURL,
     finalDraft: state.finalDraft || "",
-    escritos: buildTranscript() + buildFinalDraftBlock(),
-    transcript: buildTranscript() + buildFinalDraftBlock(),
+    journeySummary: finalPayload?.journeySynthesis || "",
+    summary: finalPayload?.journeySynthesis || "",
+    keywords: finalPayload?.keywords || [],
+    keywordText: (finalPayload?.keywords || []).join(", "),
+    escritos: finalPayload?.transcript || buildTranscript() + buildFinalDraftBlock(),
+    transcript: finalPayload?.transcript || buildTranscript() + buildFinalDraftBlock(),
     turns: state.turns
   };
 
@@ -1941,31 +2490,64 @@ async function safeRegisterFinal() {
   }
 }
 
+function safeRegisterFinalGift(finalPayload) {
+  if (state.registerGiftDone) return;
+  if (!finalPayload?.literaryGift) return;
+
+  state.registerGiftDone = true;
+
+  const gift = finalPayload.literaryGift;
+  const payload = {
+    ...buildRegisterBasePayload("final_gift"),
+    startedAtISO: state.startedAtISO,
+    endedAtISO: nowISO(),
+    page: state.pageURL,
+    finalDraft: state.finalDraft || "",
+    journeySummary: finalPayload.journeySynthesis || "",
+    summary: finalPayload.journeySynthesis || "",
+    keywords: finalPayload.keywords || [],
+    keywordText: (finalPayload.keywords || []).join(", "),
+    transcript: finalPayload.transcript || "",
+    literaryGift: gift.fragment || "",
+    literaryGiftText: gift.fragment || "",
+    literaryGiftTitle: gift.title || "",
+    literaryGiftAuthor: gift.author || "",
+    literaryGiftIntro: gift.intro || "",
+    literaryGiftSource: gift.source || "",
+    literaryGiftSeed: gift.seed || "",
+    literaryGiftMatched: gift.matchedKeywords || []
+  };
+
+  postJsonRobust(payload).catch(() => {
+    // falha externa nao interrompe o encerramento
+  });
+}
+
 // -------------------- TESTE + PRESENÇA --------------------
 const testQuestions = [
   {
-    title: "Pergunta 1",
-    q: "Quando você escreve, o que ajuda mais?",
+    title: "Pista 1",
+    q: "Quando voce escreve, o que ajuda a pensar melhor?",
     opts: [
-      ["A", "Perguntas suaves que me deixem pensar"],
-      ["B", "Um tom próximo e acolhedor"],
-      ["C", "Direcionamento claro"],
-      ["D", "Poucas interferências"]
+      ["A", "Perguntas leves que me deixem pensar"],
+      ["B", "Um tom proximo e acolhedor"],
+      ["C", "Recorte claro do que importa"],
+      ["D", "Pouquissima interferencia"]
     ]
   },
   {
-    title: "Pergunta 2",
-    q: "Se seu texto estiver confuso, você prefere:",
+    title: "Pista 2",
+    q: "Quando o texto embaralha, o que te ajuda a reencontrar o fio?",
     opts: [
       ["A", "Uma pergunta aberta"],
       ["B", "Um convite para desenrolar"],
       ["C", "Um pedido direto de clareza"],
-      ["D", "Silêncio e espaço"]
+      ["D", "Silencio e espaco"]
     ]
   },
   {
-    title: "Pergunta 3",
-    q: "O ritmo ideal de conversa é:",
+    title: "Pista 3",
+    q: "Que ritmo de conversa te serve melhor hoje?",
     opts: [
       ["A", "Calmo e leve"],
       ["B", "Conversado"],
@@ -1974,18 +2556,18 @@ const testQuestions = [
     ]
   },
   {
-    title: "Pergunta 4",
-    q: "Hoje você está escrevendo mais para:",
+    title: "Pista 4",
+    q: "Hoje voce escreve mais para:",
     opts: [
       ["A", "Explorar ideias"],
       ["B", "Expressar algo pessoal"],
       ["C", "Organizar pensamento"],
-      ["D", "Só colocar no papel"]
+      ["D", "So colocar no papel"]
     ]
   },
   {
-    title: "Pergunta 5",
-    q: "Como você quer que a IZA apareça?",
+    title: "Pista 5",
+    q: "Como voce quer sentir a presenca da IZA?",
     opts: [
       ["A", "Discreta"],
       ["B", "Calorosa"],
@@ -2008,15 +2590,15 @@ function renderPresenceTestScreen(payload, fromHistory = false) {
       const opts = q.opts
         .map(
           ([val, label]) => `
-        <label style="display:block;margin:.25rem 0;">
+        <label class="iza-test-option">
           <input type="radio" name="q${i}" value="${val}"> ${escapeHtml(label)}
         </label>`
         )
         .join("");
       return `
-      <div style="margin:1rem 0;">
-        <div style="font-weight:700;">${escapeHtml(q.title)}</div>
-        <div style="margin:.35rem 0 .5rem 0;">${escapeHtml(q.q)}</div>
+      <div class="iza-test-block">
+        <div class="iza-test-title">${escapeHtml(q.title)}</div>
+        <div class="iza-test-question">${escapeHtml(q.q)}</div>
         ${opts}
       </div>`;
     })
@@ -2025,33 +2607,35 @@ function renderPresenceTestScreen(payload, fromHistory = false) {
   render(
     renderCardShell(`
       <div class="iza-top">
-        <div>
-          <h2 style="margin:0;">Presença da IZA</h2>
+        <div class="iza-top__main">
+          <h2 class="iza-title">Presença da IZA</h2>
           <div class="iza-sub">${escapeHtml(userDisplayName())}</div>
         </div>
-        <div style="text-align:right;">
+        <div class="iza-top__side">
           <div class="iza-chip">Ajuste</div>
         </div>
       </div>
 
-      <p style="opacity:.85;margin-top:1rem">
-        Escolha uma presença fixa (A/B/C/D) ou faça o teste e gere um perfil <strong>híbrido</strong>.
+      <p class="iza-copy iza-copy--soft">
+        Se quiser, escolha uma presenca fixa. Ou responda ao teste rapido para compor uma IZA <strong>hibrida</strong>.
       </p>
 
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0 1rem 0;">
+      <div class="iza-actions iza-actions--compact">
         <button class="button" onclick="setPresenceFixed('A')">A · Discreta</button>
         <button class="button" onclick="setPresenceFixed('B')">B · Calorosa</button>
         <button class="button" onclick="setPresenceFixed('C')">C · Firme</button>
         <button class="button" onclick="setPresenceFixed('D')">D · Minimalista</button>
       </div>
 
-      <hr style="opacity:.2;margin:1rem 0;">
+      <hr class="iza-divider">
 
-      <h3 style="margin:.25rem 0;">Teste rápido (gera híbrida)</h3>
+      <h3 class="iza-kicker">Teste rapido para compor a presenca</h3>
       ${blocks}
 
-      <button class="button" id="btnDone" disabled>Concluir teste</button>
-      <button class="button" style="background:#a0896a;margin-top:10px;" onclick="showWelcome()">Voltar</button>
+      <div class="iza-actions">
+        <button class="button" id="btnDone" disabled>Ver minha presenca</button>
+        <button class="button ritual" onclick="showWelcome()">Voltar ao inicio</button>
+      </div>
 
       ${renderHistoryNav("")}
     `)
@@ -2101,27 +2685,31 @@ function renderPresenceResultScreen(payload, fromHistory = false) {
   render(
     renderCardShell(`
       <div class="iza-top">
-        <div>
-          <h2 style="margin:0;">${escapeHtml(p.name)}</h2>
+        <div class="iza-top__main">
+          <h2 class="iza-title">${escapeHtml(p.name)}</h2>
           <div class="iza-sub">${escapeHtml(userDisplayName())} · presença definida</div>
-          <div class="iza-sub" style="margin-top:.35rem;">
+          <div class="iza-sub">
             ${escapeHtml(state.municipio || "")}${state.municipio ? " · " : ""}${escapeHtml(state.estadoUF || "")}${(state.origem ? " · " + escapeHtml(state.origem) : "")}
           </div>
         </div>
-        <div style="text-align:right;">
+        <div class="iza-top__side">
           <div class="iza-chip">${escapeHtml(p.key === "H" ? "Híbrida" : "Fixa")}</div>
         </div>
       </div>
 
-      <div class="message" style="margin-top:1rem;">${escapeHtml(presenceMessage(p))}</div>
+      <div class="message iza-message">${escapeHtml(presenceMessageText(p))}</div>
 
-      <p style="margin-top:1rem;"><strong>Escolha uma trilha:</strong></p>
-      <button class="button" onclick="startTrack('iniciante')">Trilha Iniciante</button>
-      <button class="button" onclick="startTrack('intermediaria')">Trilha Intermediária (7 etapas)</button>
-      <button class="button" onclick="startTrack('inspirada')">Trilha Inspirada</button>
+      <p class="iza-section-title"><strong>Escolha o caminho da escrita</strong></p>
+      <div class="iza-copy iza-copy--soft">Cada trilha acende um jeito diferente de cavar o texto.</div>
+      <div class="iza-actions">
+        <button class="button" onclick="startTrack('iniciante')">Seguir na iniciante</button>
+        <button class="button" onclick="startTrack('intermediaria')">Ir para a intermediaria (7 passos)</button>
+        <button class="button" onclick="startTrack('inspirada')">Abrir conversa livre</button>
+      </div>
 
-      <br>
-      <button class="button" style="background:#a0896a;margin-top:10px;" onclick="showPresenceTest()">Ajustar presença</button>
+      <div class="iza-actions iza-actions--compact">
+        <button class="button ritual" onclick="showPresenceTest()">Rever presenca</button>
+      </div>
 
       ${renderHistoryNav("")}
     `)
@@ -2137,6 +2725,11 @@ function showPresenceResult() {
 }
 
 // -------------------- WELCOME --------------------
+function setWelcomeError(message) {
+  const node = document.getElementById("welcomeError");
+  if (node) node.textContent = message || "";
+}
+
 function renderWelcomeScreen(payload, fromHistory = false) {
   const ufOptions = [
     `<option value="">Selecione…</option>`,
@@ -2147,23 +2740,25 @@ function renderWelcomeScreen(payload, fromHistory = false) {
   render(
     renderCardShell(`
       <div class="iza-top">
-        <div>
-          <h2 style="margin:0;">IZA no Cordel 2.0</h2>
-          <div class="iza-sub">Uma ancestral que te ajuda a pensar durante o processo de escrita.</div>
+        <div class="iza-top__main">
+          <h2 class="iza-title">IZA no Cordel 2.0</h2>
+          <div class="iza-sub">Perguntar para pensar.</div>
         </div>
-        <div style="text-align:right;">
+        <div class="iza-top__side">
           <div class="iza-chip">Início</div>
         </div>
       </div>
 
-      <p style="margin-top:1rem;">
-        IZA é uma ancestral — de escrita: ela não escreve por você;
-        ela te ajuda a <strong>pensar, organizar e aprofundar</strong> o que você já está tentando dizer.
+      <p class="iza-copy">
+        IZA e uma ancestral de escrita: ela nao escreve por voce;
+        ela faz perguntas para te ajudar a <strong>pensar, organizar e aprofundar</strong> o que seu texto ainda esta pedindo.
       </p>
 
-      <p style="opacity:.85">
-        Antes de começar, preencha seus dados e escolha a origem.
+      <p class="iza-copy iza-copy--soft">
+        Antes da jornada, deixe seus dados e diga de onde voce chega.
       </p>
+
+      <div id="welcomeError"></div>
 
       <input type="text" id="userName" class="input-area" placeholder="Seu nome" value="${escapeHtml(state.name)}">
       <input type="email" id="userEmail" class="input-area" placeholder="Seu e-mail" value="${escapeHtml(state.email)}">
@@ -2174,15 +2769,15 @@ function renderWelcomeScreen(payload, fromHistory = false) {
         ${ufOptions}
       </select>
 
-      <div style="margin-top:.25rem;">
-        <div style="font-weight:700;margin:.25rem 0;">Origem</div>
+      <div class="iza-label-group">
+        <div class="iza-label-group__title">De onde voce vem</div>
         <div class="iza-radio">
           <label><input type="radio" name="origem" value="Oficina Cordel 2.0"> Oficina Cordel 2.0</label>
           <label><input type="radio" name="origem" value="Particular"> Particular</label>
         </div>
       </div>
 
-      <button class="button" onclick="validateStart()">Começar</button>
+      <button class="button" onclick="validateStart()">Comecar jornada</button>
 
       ${renderHistoryNav("")}
     `)
@@ -2230,7 +2825,19 @@ window.validateStart = function () {
   const origemPicked = document.querySelector('input[name="origem"]:checked')?.value || "";
   state.origem = normalizeOrigem(origemPicked);
 
-  if (!state.name || !state.email) return;
+  const missing = [];
+  if (!state.name) missing.push("nome");
+  if (!state.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email)) missing.push("e-mail valido");
+  if (!state.municipio) missing.push("municipio");
+  if (!state.estadoUF) missing.push("estado");
+  if (!state.origem) missing.push("origem");
+
+  if (missing.length) {
+    setWelcomeError(`Falta preencher: ${missing.join(", ")}.`);
+    return;
+  }
+
+  setWelcomeError("");
 
   // registro init (não trava)
   safeRegisterInit();
