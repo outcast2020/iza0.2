@@ -111,7 +111,17 @@ function loadAndResumeSession() {
     return false;
   }
 
-  const wantResume = confirm("Ha uma jornada de escrita em andamento. Quer retomar do ponto em que parou?");
+  const canAskNativeConfirm = (() => {
+    try {
+      return window.self === window.top;
+    } catch (_) {
+      return false;
+    }
+  })();
+
+  const wantResume = canAskNativeConfirm
+    ? confirm("Há uma jornada de escrita em andamento. Quer retomar do ponto em que parou?")
+    : true;
   if (!wantResume) {
     clearStateFromLocal();
     return false;
@@ -1423,21 +1433,34 @@ function centerChoicePrompt(fragment) {
   const frag = swapPronouns((fragment || "").trim());
 
   if (p.key === "D") {
-    return `“${frag}—”\nA) pergunta  B) afirmação  C) ferida  D) desejo\n(A/B/C/D ou escreva do seu jeito)`;
+    return `“${frag}—”\nIsso está mais perto de pergunta, afirmação, ferida ou desejo?\nSe preferir, escreva do seu jeito.`;
   }
   if (p.key === "C") {
-    return `Você disse: “${frag}—”. Classifique o núcleo:\nA) pergunta\nB) afirmação\nC) ferida\nD) desejo\nSe preferir, escreva do seu jeito.`;
+    return `Você disse: “${frag}—”. Classifique o núcleo com precisão: pergunta, afirmação, ferida ou desejo.\nSe preferir, escreva do seu jeito.`;
   }
   if (p.key === "B") {
-    return `Ao ler “${frag}—”, eu sinto um núcleo aí.\nIsso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nSe preferir, escreva do seu jeito.`;
+    return `Ao ler “${frag}—”, eu sinto um núcleo aí.\nIsso está mais perto de uma pergunta, uma afirmação, uma ferida ou um desejo?\nSe preferir, escreva do seu jeito.`;
   }
-  return `Quando você diz “${frag}—”, isso está mais perto de:\nA) uma pergunta\nB) uma afirmação\nC) uma ferida\nD) um desejo\nSe preferir, escreva do seu jeito.`;
+  return `Quando você diz “${frag}—”, isso está mais perto de uma pergunta, uma afirmação, uma ferida ou um desejo?\nSe preferir, escreva do seu jeito.`;
 }
 
 function interpretCenterChoice(text) {
-  const t = (text || "").trim().toLowerCase();
+  const raw = String(text || "").trim();
+  const t = raw.toLowerCase();
+  const normalized = raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
   const map = { a: "pergunta", b: "afirmacao", c: "ferida", d: "desejo" };
-  const choice = map[t[0]] || null;
+  let choice = map[t[0]] || null;
+
+  if (!choice) {
+    if (/\bpergunta\b/.test(normalized)) choice = "pergunta";
+    else if (/\bafirmac/.test(normalized)) choice = "afirmacao";
+    else if (/\bferida\b/.test(normalized)) choice = "ferida";
+    else if (/\bdesej/.test(normalized)) choice = "desejo";
+  }
+
   if (!choice) return { type: "livre", label: "o seu próprio modo de dizer" };
   const labelMap = {
     pergunta: "uma pergunta",
@@ -1453,15 +1476,15 @@ function refinedCenterChoicePrompt(fragment) {
   const frag = swapPronouns((fragment || "").trim());
 
   if (p.key === "D") {
-    return `"${frag}"\nA) pergunta  B) afirmacao  C) ferida  D) desejo\n(A/B/C/D ou escreva do seu jeito)`;
+    return `"${frag}"\nIsso está mais perto de pergunta, afirmação, ferida ou desejo?\nSe preferir, escreva do seu jeito.`;
   }
   if (p.key === "C") {
-    return `Voce disse: "${frag}". Classifique o nucleo com precisao:\nA) pergunta\nB) afirmacao\nC) ferida\nD) desejo\nSe preferir, nomeie do seu jeito.`;
+    return `Você disse: "${frag}". Classifique o núcleo com precisão: pergunta, afirmação, ferida ou desejo.\nSe preferir, nomeie do seu jeito.`;
   }
   if (p.key === "B") {
-    return `Ao ler "${frag}", eu sinto um nucleo vivo aqui.\nO que nomeia melhor isso:\nA) uma pergunta\nB) uma afirmacao\nC) uma ferida\nD) um desejo\nSe preferir, escreva do seu jeito.`;
+    return `Ao ler "${frag}", eu sinto um núcleo vivo aqui.\nO que nomeia melhor isso: uma pergunta, uma afirmação, uma ferida ou um desejo?\nSe preferir, escreva do seu jeito.`;
   }
-  return `Quando voce diz "${frag}", qual nome sustenta melhor esse nucleo?\nA) uma pergunta\nB) uma afirmacao\nC) uma ferida\nD) um desejo\nSe preferir, escreva do seu jeito.`;
+  return `Quando você diz "${frag}", qual nome sustenta melhor esse núcleo: pergunta, afirmação, ferida ou desejo?\nSe preferir, escreva do seu jeito.`;
 }
 
 // -------------------- TRACKS --------------------
