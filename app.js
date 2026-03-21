@@ -2049,7 +2049,7 @@ function buildFallbackLiteraryGift(keywords) {
     intro: "Não encontrei um eco direto na biblioteca agora, mas IZA não te deixa sair de mãos vazias.",
     fragment: `Guarde ${seed}. Quando a trilha parece terminar, ela ainda conversa com ${companion}. O que ficou vivo aqui talvez seja o começo de outra frase.`,
     author: "IZA",
-    title: "Bênção de encerramento",
+    title: "Eco de encerramento",
     matchedKeywords: [seed, companion].filter(Boolean)
   };
 }
@@ -2086,7 +2086,9 @@ function buildGiftLookupFallback(payload, response) {
     intro:
       reason === "timeout"
         ? "A biblioteca poética demorou além do esperado para responder. IZA guardou o seu fechamento e te deixa este presente por agora."
-        : "O presente poético não voltou do web app a tempo. IZA não te deixa sair de mãos vazias."
+        : reason === "network"
+          ? "A ligação com a biblioteca poética falhou neste momento. IZA guardou o seu percurso e te entrega este fecho por agora."
+          : "A biblioteca poética encontrou um problema ao buscar o presente. IZA guardou o seu percurso e te entrega este fecho por agora."
   };
 }
 
