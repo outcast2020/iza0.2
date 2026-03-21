@@ -22,7 +22,7 @@
 // ==========================================
 
 const WEBAPP_URL =
-  "https://script.google.com/macros/s/AKfycbzMxkzJ35vbfeMaDxGVrRyUgbS7QRbqGAcUUw8kx6mt3ehSm5pVqJmDI97hpAYKqdcX/exec";
+  "https://script.google.com/macros/s/AKfycbzy-FTfJYrjs-q1TQsWG1KFQOGWFW08MrAf9TsvPezAeghBlEQSwy-LPaW35zfwVSnB/exec";
 
 const MIN_INSPIRED_ROUNDS = 7;
 const GIFT_LOOKUP_TIMEOUT_MS = 20000;
