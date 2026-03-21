@@ -1967,6 +1967,10 @@ function extractJourneyKeywords() {
     { text: state.finalDraft || "", weight: 4 },
     { text: extractEmergentPhrase(), weight: 3 },
     { text: userTexts.slice(-Math.min(6, userTexts.length)).join(" "), weight: state.trackKey === "inspirada" ? 3 : 2 },
+    {
+      text: userTexts.slice(Math.max(0, Math.floor(userTexts.length / 2) - 2), Math.max(0, Math.floor(userTexts.length / 2) - 2) + 4).join(" "),
+      weight: 2.4
+    },
     { text: userTexts.join(" "), weight: 2 },
     { text: userTexts.slice(0, Math.min(3, userTexts.length)).join(" "), weight: 1.5 }
   ];
@@ -2224,13 +2228,32 @@ function updateFinalClosureUI() {
   if (outNode) outNode.value = state.finalClosure.transcript || "";
 }
 
+function buildGiftJourneyContext(payload) {
+  const userTexts = userTurnsOnly().map((turn) => normalizeInlineText(turn.text)).filter(Boolean);
+  const middleStart = Math.max(0, Math.floor(userTexts.length / 2) - 2);
+  const sections = [
+    state.finalDraft || "",
+    payload.emergentPhrase || "",
+    userTexts.slice(0, Math.min(3, userTexts.length)).join(" || "),
+    userTexts.slice(middleStart, middleStart + 4).join(" || "),
+    userTexts.slice(-Math.min(6, userTexts.length)).join(" || "),
+    userTexts.join(" || ")
+  ];
+
+  const unique = [];
+  sections.forEach((section) => {
+    const clean = normalizeInlineText(section);
+    if (!clean) return;
+    if (unique.includes(clean)) return;
+    unique.push(clean);
+  });
+
+  return clipText(unique.join(" || "), 1600);
+}
+
 function requestLiteraryGift(payload) {
   return new Promise((resolve) => {
-    const journeyText = userTurnsOnly()
-      .slice(-Math.min(8, userTurnsOnly().length))
-      .map((turn) => normalizeInlineText(turn.text))
-      .filter(Boolean)
-      .join(" || ");
+    const journeyText = buildGiftJourneyContext(payload);
     const callbackName =
       "__izaGiftCb_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
     const params = new URLSearchParams({
@@ -2242,7 +2265,7 @@ function requestLiteraryGift(payload) {
         [payload.emergentPhrase, payload.lastText, state.finalDraft].filter(Boolean).join(" || "),
         520
       ),
-      journeyText: clipText(journeyText, 900),
+      journeyText: journeyText,
       trackKey: state.trackKey || "",
       presenceKey: state.presenceKey || ""
     });
