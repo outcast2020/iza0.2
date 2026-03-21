@@ -25,7 +25,7 @@ const WEBAPP_URL =
   "https://script.google.com/macros/s/AKfycbzMxkzJ35vbfeMaDxGVrRyUgbS7QRbqGAcUUw8kx6mt3ehSm5pVqJmDI97hpAYKqdcX/exec";
 
 const MIN_INSPIRED_ROUNDS = 7;
-const GIFT_LOOKUP_TIMEOUT_MS = 6500;
+const GIFT_LOOKUP_TIMEOUT_MS = 20000;
 
 // -------------------- STATE --------------------
 const state = {
@@ -2054,6 +2054,19 @@ function normalizeGiftResponse(rawGift, payload) {
   };
 }
 
+function buildGiftLookupFallback(payload, response) {
+  const gift = buildFallbackLiteraryGift(payload.keywords || []);
+  const reason = response?.error || "gift_lookup_unavailable";
+  return {
+    ...gift,
+    source: "fallback_local",
+    intro:
+      reason === "timeout"
+        ? "A biblioteca poética demorou além do esperado para responder. IZA guardou o seu fechamento e te deixa este presente por agora."
+        : "O presente poético não voltou do web app a tempo. IZA não te deixa sair de mãos vazias."
+  };
+}
+
 function renderGiftLead(source) {
   if (source === "associated_poem") {
     return "Nem sempre o encontro vem por espelho exato. Às vezes ele aparece por vizinhança de imagens e linguagem.";
@@ -2249,19 +2262,25 @@ function syncLiteraryGiftForFinal() {
 
   requestLiteraryGift(payload)
     .then((response) => {
-      const gift = normalizeGiftResponse(response?.gift, payload);
+      const gift = response?.ok === false
+        ? buildGiftLookupFallback(payload, response)
+        : normalizeGiftResponse(response?.gift, payload);
       state.finalClosure = {
         ...state.finalClosure,
         literaryGift: gift,
-        literaryGiftStatus: gift.source === "fallback" ? "fallback" : "ready"
+        literaryGiftStatus: gift.source === "fallback" || gift.source === "fallback_local" ? "fallback" : "ready",
+        literaryGiftDiagnostics: response?.diagnostics || null
       };
       state.finalClosure.transcript = buildFinalRecordTranscript(state.finalClosure);
       updateLatestFinalViewPayload(state.finalClosure);
       updateFinalClosureUI();
       safeRegisterFinalGift(state.finalClosure);
     })
-    .catch(() => {
-      const gift = buildFallbackLiteraryGift(payload.keywords || []);
+    .catch((error) => {
+      const gift = buildGiftLookupFallback(payload, {
+        ok: false,
+        error: String(error?.message || error || "network")
+      });
       state.finalClosure = {
         ...state.finalClosure,
         literaryGift: gift,
