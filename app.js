@@ -181,6 +181,17 @@ function firstName(full) {
   return t.split(/\s+/)[0];
 }
 
+function presenceOptionName(key) {
+  const names = {
+    A: "Discreta",
+    B: "Calorosa",
+    C: "Firme",
+    D: "Minimalista",
+    H: "Híbrida"
+  };
+  return names[key] || "IZA";
+}
+
 function izaDisplayName() {
   if (state.presence?.name) return state.presence.name; // "IZA Calorosa" etc.
   return "IZA";
@@ -440,18 +451,18 @@ function presenceMessageText(p) {
     const parts = Object.entries(mix)
       .filter(([, v]) => v > 0)
       .sort((a, b) => b[1] - a[1])
-      .map(([k, v]) => `${k}: ${Math.round(v * 100)}%`)
+      .map(([k, v]) => `${presenceOptionName(k)}: ${Math.round(v * 100)}%`)
       .join(" · ");
-    return `Hoje sua IZA sera hibrida (${parts}). Ela alterna acolhimento, recorte e silencio conforme o modo como sua escrita pede companhia.`;
+    return `Hoje sua IZA será híbrida (${parts}). Ela alterna acolhimento, recorte e silêncio conforme o modo como sua escrita pede companhia.`;
   }
 
   const base = {
-    A: "Vou aparecer de leve, abrindo espaco para voce escutar melhor o proprio texto.",
-    B: "Vou seguir perto, com calor e escuta, sem tomar o lugar da sua escrita.",
-    C: "Vou entrar com recorte e perguntas de precisao, para fazer a ideia se sustentar melhor.",
-    D: "Vou quase sumir: pouco ruido, quase nenhum comentario, mais campo para voce escrever."
+    A: "Vou aparecer de leve, abrindo espaço para você perceber o que seu próprio texto já sabe.",
+    B: "Vou seguir perto, com calor e escuta, acolhendo o que aparecer sem tomar o lugar da sua escrita.",
+    C: "Vou entrar com recorte, precisao e contraste, para a ideia ganhar forma e sustento.",
+    D: "Vou quase sumir: mínimo ruído, quase nenhum comentário, mais campo para você escrever e decidir."
   };
-  return (base[p.key] || "") + " Se quiser, da para recalibrar isso depois.";
+  return (base[p.key] || "") + " Se quiser, dá para recalibrar isso depois.";
 }
 
 // -------------------- HYBRID PRESENCE --------------------
@@ -509,19 +520,19 @@ function presencePhraseSets() {
   return {
     A: {
       softeners: ["", "Se fizer sentido,", "Talvez,", "Pode ser que,"],
-      closings: ["", "Se quiser, siga.", "Continue quando fizer sentido."]
+      closings: ["", "Se quiser, siga.", "Continue quando fizer sentido.", "Veja se isso pede mais um passo."]
     },
     B: {
-      softeners: ["Entendi.", "Estou com voce.", "Obrigada por dividir isso.", "Vamos por partes."],
-      closings: ["Se quiser, eu sigo com voce.", "Pode ir no seu ritmo.", "Vamos com calma."]
+      softeners: ["Entendi.", "Estou com você.", "Obrigada por dividir isso.", "Vamos por partes."],
+      closings: ["Se quiser, eu sigo com você.", "Pode ir no seu ritmo.", "Vamos com calma.", "Eu fico por perto."]
     },
     C: {
-      softeners: ["Vamos ao nucleo.", "Certo. Vamos delimitar.", "Foco no ponto central."],
-      closings: ["Responda em uma frase.", "Agora sustente isso.", "Siga com precisao."]
+      softeners: ["Vamos ao núcleo.", "Certo. Vamos delimitar.", "Foco no ponto central."],
+      closings: ["Responda em uma frase.", "Agora sustente isso.", "Siga com precisao.", "Recorte melhor."]
     },
     D: {
       softeners: [""],
-      closings: ["Continue.", "Mais.", ""]
+      closings: ["Continue.", "Mais.", "", "Siga."]
     }
   };
 }
@@ -647,6 +658,84 @@ function ensureMeaningfulTemplateText(text, userText) {
   }
 
   return out;
+}
+
+function extractReflectiveAnchor(userText) {
+  const raw = String(userText || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+
+  const sentenceCandidates = raw
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const clauseCandidates = raw
+    .split(/[;,:]\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const candidates = sentenceCandidates.concat(clauseCandidates);
+  if (!candidates.length) return "";
+
+  const scored = candidates
+    .map((candidate) => {
+      const clean = candidate.replace(/^["'“”]+|["'“”]+$/g, "").trim();
+      const words = clean.split(/\s+/).filter(Boolean);
+      const lexicalScore = (clean.match(/\b(?:porque|quando|ainda|quase|coragem|medo|desejo|ferida|duvida|amor|vida|texto|caminho|imagem|cena)\b/gi) || []).length;
+      const punctuationPenalty = /(?:[A-ZÀ-Ý]{4,}|[a-zà-ÿ][A-ZÀ-Ý])/.test(clean) ? 2 : 0;
+      const score =
+        Math.min(8, words.length) +
+        lexicalScore * 2 -
+        Math.max(0, words.length - 16) * 0.4 -
+        punctuationPenalty;
+      return { clean, words: words.length, score };
+    })
+    .filter((item) => item.clean.length >= 8)
+    .sort((a, b) => b.score - a.score || a.words - b.words);
+
+  const chosen = scored[0] || { clean: raw.split(/\s+/).slice(0, 10).join(" ") };
+  return swapPronouns(chosen.clean).replace(/\s+/g, " ").trim();
+}
+
+function shortMirror(presence, userText) {
+  const t = (userText || "").trim();
+  if (!t) return presence.key === "D" ? "Continue." : "Pode seguir.";
+  const anchor = extractReflectiveAnchor(t) || swapPronouns(t.split(/\s+/).slice(0, 10).join(" "));
+
+  if (presence.mirror === "tiny") {
+    return `“${anchor}”`;
+  }
+  if (presence.mirror === "short") {
+    if (presence.key === "B") {
+      return pick([
+        `No que você disse, ficou aceso: “${anchor}”.`,
+        `Estou te ouvindo por aqui: “${anchor}”.`
+      ]);
+    }
+    return pick([
+      `Você trouxe isto: “${anchor}”.`,
+      `Tem um ponto vivo aí: “${anchor}”.`
+    ]);
+  }
+  if (presence.key === "C") {
+    return pick([
+      `No centro do que você disse está isto: “${anchor}”.`,
+      `Vou recortar o núcleo assim: “${anchor}”.`
+    ]);
+  }
+  return pick([
+    `O que estou escutando no seu texto é: “${anchor}”.`,
+    `Se eu devolver o que apareceu com mais força, diria: “${anchor}”.`
+  ]);
+}
+
+function fallbackUserAnchor(userText) {
+  const anchor = extractReflectiveAnchor(userText);
+  if (anchor) return anchor;
+  const t = (userText || "").trim();
+  if (!t) return "isso que você trouxe";
+  const slice = t.split(/\s+/).slice(0, 10).join(" ");
+  return swapPronouns(slice);
 }
 
 const EXTERNAL_RULES = Array.isArray(window.IZA_RULES) ? window.IZA_RULES : [];
@@ -1159,7 +1248,15 @@ function centerLensLine() {
     }
   };
 
-  const k = p.key === "H" ? "B" : p.key;
+  const k = p.key === "H"
+    ? ((state.presenceMix?.C || 0) > 0.4
+      ? "C"
+      : (state.presenceMix?.B || 0) > 0.35
+        ? "B"
+        : (state.presenceMix?.D || 0) > 0.5
+          ? "D"
+          : "A")
+    : p.key;
   const arr = (lines[ct] && (lines[ct][k] || lines[ct].A)) || [""];
   return pick(arr);
 }
@@ -1206,10 +1303,10 @@ function leadLine(userText) {
 
 function refinedPresenceClosing(p) {
   const base = {
-    A: ["", "Se quiser, siga.", "Vale cavar mais um pouco.", "Continue quando a proxima frase aparecer."],
-    B: ["", "Pode ir no seu ritmo.", "Se quiser, eu sigo com voce.", "Ha algo ai que ainda pode florescer."],
-    C: ["", "Responda em uma frase.", "Nomeie melhor o ponto.", "Agora sustente isso."],
-    D: ["", "Siga."]
+    A: ["", "Se quiser, siga.", "Vale cavar mais um pouco.", "Continue quando a próxima frase aparecer."],
+    B: ["", "Pode ir no seu ritmo.", "Se quiser, eu sigo com você.", "Há algo aí que ainda pode florescer.", "Vamos cuidar um pouco mais disso."],
+    C: ["", "Responda em uma frase.", "Nomeie melhor o ponto.", "Agora sustente isso.", "Seja mais preciso."],
+    D: ["", "Siga.", "Mais."]
   };
 
   if (p.key === "H" && state.presenceMix) {
@@ -1232,28 +1329,29 @@ function refinedLeadLine(userText) {
   if (p.key === "H" && state.presenceMix) {
     const mix = state.presenceMix;
     if ((mix.D || 0) > 0.55) return "";
-    if ((mix.C || 0) > 0.45) return pick(["Vamos ao nucleo.", "Delimite o ponto central.", "Recorte melhor o que apareceu."]);
-    if ((mix.B || 0) > 0.35) return pick(["Estou com voce.", "Isso importa.", "Obrigada por trazer isso."]);
+    if ((mix.C || 0) > 0.45) return pick(["Vamos ao núcleo.", "Delimite o ponto central.", "Recorte melhor o que apareceu."]);
+    if ((mix.B || 0) > 0.35) return pick(["Estou com você.", "Isso importa.", "Obrigada por trazer isso.", "Vamos escutar melhor esse ponto."]);
     return pick(["Entendi.", "Certo.", "Vamos olhar isso melhor."]);
   }
 
-  if (p.key === "A") return pick(["Entendi.", "Certo.", "Vamos deixar isso respirar."]);
+  if (p.key === "A") return pick(["Entendi.", "Certo.", "Vamos deixar isso respirar.", "Talvez o texto já tenha uma pista aí."]);
 
   if (p.key === "B") {
     const ct = state.centerType;
     const bank = [
       "Obrigada por confiar isso ao texto.",
-      "Estou com voce, sem pressa.",
+      "Estou com você, sem pressa.",
       "Entendi. Isso pede escuta.",
-      ct === "ferida" ? "Isso toca num ponto sensivel." : "",
-      ct === "desejo" ? "Isso tem pulsacao." : "",
+      "Vamos ouvir melhor o que apareceu aqui.",
+      ct === "ferida" ? "Isso toca num ponto sensível." : "",
+      ct === "desejo" ? "Isso tem pulsação." : "",
       ct === "pergunta" ? "Essa pergunta esta viva." : "",
       ct === "afirmacao" ? "Isso afirma algo importante." : ""
     ].filter(Boolean);
     return pick(bank);
   }
 
-  if (p.key === "C") return pick(["Vamos ao nucleo.", "Seja preciso.", "Delimite o que esta em jogo."]);
+  if (p.key === "C") return pick(["Vamos ao núcleo.", "Seja preciso.", "Delimite o que está em jogo.", "Recorte o ponto central."]);
 
   return "";
 }
@@ -1294,14 +1392,33 @@ function composeReply(p, userText, mirror, qText, minimalistNow) {
   const closing = refinedPresenceClosing(p);
   const safeQuestion = ensureMeaningfulTemplateText(fixEmptyQuestion(qText), userText);
   const safeMirror = ensureMeaningfulTemplateText(mirror, userText);
+  const anchor = extractReflectiveAnchor(userText);
+  const bridge =
+    !anchor || p.key === "D"
+      ? ""
+      : p.key === "B"
+        ? pick([
+          `Tem algo de vivo em “${anchor}”.`,
+          `Parece que “${anchor}” está pedindo mais espaço no texto.`
+        ])
+        : p.key === "A"
+          ? (Math.random() < 0.5 ? `Talvez o ponto mais nitido esteja em “${anchor}”.` : "")
+          : p.key === "H" && state.presenceMix && (state.presenceMix.B || 0) > 0.32
+            ? pick([
+              `Tem uma pista importante em “${anchor}”.`,
+              `Acho que “${anchor}” merece mais escuta.`
+            ])
+            : "";
 
   if (minimalistNow || p.key === "D") {
     return safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, pode continuar?`;
   }
 
   const parts = [];
+  if (lead && p.key === "B") parts.push(lead);
   if (safeMirror) parts.push(safeMirror);
-  if (lead) parts.push(lead);
+  if (lead && p.key !== "B") parts.push(lead);
+  if (bridge) parts.push(bridge);
 
   if (lens) {
     if (p.key === "A") {
@@ -1344,7 +1461,7 @@ function askSevenWordsPrompt(userText) {
       ct === "desejo" ? "Tente em 7 palavras: o que segura esse desejo agora?" :
         ct === "pergunta" ? "Tente em 7 palavras: qual parte da pergunta pesa mais?" :
           ct === "afirmacao" ? "Tente em 7 palavras: que prova sustenta isso?" :
-            "Tente em 7 palavras com lugar ou gesto: o que voce quer dizer?";
+            "Tente em 7 palavras com lugar ou gesto: o que você quer dizer?";
 
   const hook = userText ? `Você disse: “${swapPronouns(userText)}—”. ` : "";
   return hook + base;
@@ -1451,15 +1568,16 @@ function interpretCenterChoice(text) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
-  const map = { a: "pergunta", b: "afirmacao", c: "ferida", d: "desejo" };
-  let choice = map[t[0]] || null;
+  let choice = null;
 
-  if (!choice) {
-    if (/\bpergunta\b/.test(normalized)) choice = "pergunta";
-    else if (/\bafirmac/.test(normalized)) choice = "afirmacao";
-    else if (/\bferida\b/.test(normalized)) choice = "ferida";
-    else if (/\bdesej/.test(normalized)) choice = "desejo";
-  }
+  if (/^\s*a\s*$/.test(normalized)) choice = "pergunta";
+  else if (/^\s*b\s*$/.test(normalized)) choice = "afirmacao";
+  else if (/^\s*c\s*$/.test(normalized)) choice = "ferida";
+  else if (/^\s*d\s*$/.test(normalized)) choice = "desejo";
+  else if (/\bpergunta\b/.test(normalized)) choice = "pergunta";
+  else if (/\bafirmac/.test(normalized)) choice = "afirmacao";
+  else if (/\bferida\b/.test(normalized)) choice = "ferida";
+  else if (/\bdesej/.test(normalized)) choice = "desejo";
 
   if (!choice) return { type: "livre", label: "o seu próprio modo de dizer" };
   const labelMap = {
@@ -1494,7 +1612,7 @@ const TRACKS = {
     steps: [
       {
         key: "nucleo",
-        prompt: "Passo 1 — Nucleo\nEscreva livremente sobre o que quer trabalhar hoje.",
+        prompt: "Passo 1 — Núcleo\nEscreva livremente sobre o que quer trabalhar hoje.",
         onUser: (t) => izaReply(t) + "\n\nAgora nomeie o centro disso em 1 frase."
       },
       {
@@ -1518,12 +1636,12 @@ const TRACKS = {
               p.key === "C" ? `Registrado: ${parsed.label}.` :
                 p.key === "B" ? `Certo — vamos tratar o centro como ${parsed.label}.` :
                   `Ok — vamos tratar o centro como ${parsed.label}.`;
-          return `${lead}\n\nPasso 2 — Atrito\nO que esta em jogo aqui: conflito, desejo, risco ou duvida?`;
+          return `${lead}\n\nPasso 2 — Atrito\nO que está em jogo aqui: conflito, desejo, risco ou dúvida?`;
         }
       },
       {
         key: "atrito",
-        prompt: "Passo 2 — Atrito\nO que esta em jogo aqui?",
+        prompt: "Passo 2 — Atrito\nO que está em jogo aqui?",
         onUser: (t) => {
           const hint =
             state.centerType === "pergunta" ? "Qual parte da pergunta dói mais?" :
@@ -1531,12 +1649,12 @@ const TRACKS = {
                 state.centerType === "ferida" ? "O que encosta nessa ferida?" :
                   state.centerType === "desejo" ? "O que atrapalha esse desejo?" :
                     "Qual é a tensão aqui?";
-          return izaReply(t) + `\n\nPasso 3 — Cena\nTraga uma cena concreta: lugar, alguem e um gesto. ${hint}`;
+          return izaReply(t) + `\n\nPasso 3 — Cena\nTraga uma cena concreta: lugar, alguém e um gesto. ${hint}`;
         }
       },
       {
         key: "cena",
-        prompt: "Passo 3 — Cena\nTraga uma cena concreta: lugar, alguem e um gesto.",
+        prompt: "Passo 3 — Cena\nTraga uma cena concreta: lugar, alguém e um gesto.",
         onUser: (t) => izaReply(t) + "\n\nPasso 4 — Frase que fica\nEscreva a frase que merece permanecer."
       },
       {
@@ -1556,7 +1674,7 @@ const TRACKS = {
     steps: [
       {
         key: "tema",
-        prompt: "Passo 1 — Tema\nEm poucas palavras, qual e o tema?",
+        prompt: "Passo 1 — Tema\nEm poucas palavras, qual é o tema?",
         onUser: (t) => izaReply(t) + "\n\nPasso 2 — Centro\nDiga o centro disso em 1 frase."
       },
       {
@@ -1580,12 +1698,12 @@ const TRACKS = {
               p.key === "C" ? `Registrado: ${parsed.label}.` :
                 p.key === "B" ? `Certo — tratemos o centro como ${parsed.label}.` :
                   `Ok — tratemos o centro como ${parsed.label}.`;
-          return `${lead}\n\nPasso 3 — Atrito\nO que esta em jogo: conflito, regra, risco ou desejo?`;
+          return `${lead}\n\nPasso 3 — Atrito\nO que está em jogo: conflito, regra, risco ou desejo?`;
         }
       },
       {
         key: "atrito",
-        prompt: "Passo 3 — Atrito\nO que esta em jogo?",
+        prompt: "Passo 3 — Atrito\nO que está em jogo?",
         onUser: (t) => izaReply(t) + "\n\nPasso 4 — Concreto\nMostre onde isso aparece: cena, fala, gesto ou lugar."
       },
       {
@@ -1595,17 +1713,17 @@ const TRACKS = {
       },
       {
         key: "contraste",
-        prompt: "Passo 5 — Contraste\nDuas forcas em tensao:",
-        onUser: (t) => izaReply(t) + "\n\nPasso 6 — Sintese\nReuna tudo em 3 linhas."
+        prompt: "Passo 5 — Contraste\nDuas forças em tensão:",
+        onUser: (t) => izaReply(t) + "\n\nPasso 6 — Síntese\nReúna tudo em 3 linhas."
       },
       {
         key: "sintese",
-        prompt: "Passo 6 — Sintese\nReuna tudo em 3 linhas.",
-        onUser: (t) => izaReply(t) + "\n\nPasso 7 — Forma final\nEscreva a versao que vale levar adiante."
+        prompt: "Passo 6 — Síntese\nReúna tudo em 3 linhas.",
+        onUser: (t) => izaReply(t) + "\n\nPasso 7 — Forma final\nEscreva a versão que vale levar adiante."
       },
       {
         key: "forma_final",
-        prompt: "Passo 7 — Forma final\nEscreva a versao que voce quer sustentar.",
+        prompt: "Passo 7 — Forma final\nEscreva a versão que você quer sustentar.",
         onUser: (t) => {
           state.finalDraft = (t || "").trim();
           return izaReply(t) + "\n\nFechamos esta travessia. Vou preparar o seu registro.";
@@ -1620,7 +1738,7 @@ const TRACKS = {
     steps: [
       {
         key: "abertura",
-        prompt: "Sobre o que voce quer escrever hoje?",
+        prompt: "Sobre o que você quer escrever hoje?",
         onUser: (t) => izaReply(t) + "\n\nSe fosse nomear o centro em 1 frase, como diria?"
       },
       {
@@ -1779,7 +1897,7 @@ function renderPromptScreen(payload, fromHistory = false) {
 
       ${canSend
         ? `<button id="btnSend" class="button">Registrar resposta</button>`
-        : `<div class="iza-hint">Voce esta revendo uma etapa anterior. O texto enviado fica guardado no registro.</div>`
+        : `<div class="iza-hint">Você está revendo uma etapa anterior. O texto enviado fica guardado no registro.</div>`
       }
 
       ${renderHistoryNav("")}
@@ -1827,7 +1945,7 @@ function renderIzaScreen(payload, fromHistory = false) {
 
       ${canContinue
         ? `<button class="button" id="btnNext">Seguir</button>`
-        : `<div class="iza-hint">Voce esta revendo uma fala anterior da IZA.</div>`
+        : `<div class="iza-hint">Você está revendo uma fala anterior da IZA.</div>`
       }
 
       ${renderHistoryNav("")}
@@ -1878,13 +1996,13 @@ function buildTranscript() {
     `IZA no Cordel 2.0 - Registro\n` +
     `Nome: ${state.name}\nEmail: ${state.email}\n` +
     `Municipio: ${state.municipio || ""}\nEstado: ${state.estadoUF || ""}\nOrigem: ${state.origem || ""}\n` +
-    `Trilha: ${state.trackKey}\nPresenca: ${state.presence?.name || state.presenceKey}\n` +
+    `Trilha: ${state.trackKey}\nPresença: ${state.presence?.name || state.presenceKey}\n` +
     `Inicio: ${state.startedAtISO}\nFim: ${nowISO()}\n` +
     `---\n\n`;
 
   const body = state.turns
     .map((t) => {
-      const who = t.role === "user" ? "VOCE" : "IZA";
+      const who = t.role === "user" ? "VOCÊ" : "IZA";
       return `${who}:\n${t.text}\n`;
     })
     .join("\n");
@@ -2009,10 +2127,10 @@ function buildJourneySynthesis(summary, keywords) {
   const focus = listToNaturalLanguage((keywords || []).slice(0, 3));
   const centerMap = {
     pergunta: "uma pergunta que pedia desdobramento",
-    afirmacao: "uma afirmacao que precisava sustento",
+    afirmacao: "uma afirmação que precisava de sustento",
     ferida: "uma ferida que pediu nome e contorno",
     desejo: "um desejo que buscou forma",
-    livre: "um nucleo ainda aberto"
+    livre: "um núcleo ainda aberto"
   };
 
   const lines = [];
@@ -2023,7 +2141,7 @@ function buildJourneySynthesis(summary, keywords) {
   );
 
   if (state.centerType) {
-    lines.push(`No percurso, apareceu ${centerMap[state.centerType] || "um nucleo que foi se revelando melhor"}.`);
+    lines.push(`No percurso, apareceu ${centerMap[state.centerType] || "um núcleo que foi se revelando melhor"}.`);
   } else if (
     summary.firstText &&
     summary.lastText &&
@@ -2629,12 +2747,12 @@ function safeRegisterFinalGift(finalPayload) {
 const testQuestions = [
   {
     title: "Pista 1",
-    q: "Quando voce escreve, o que ajuda a pensar melhor?",
+    q: "Quando você escreve, o que ajuda a pensar melhor?",
     opts: [
       ["A", "Perguntas leves que me deixem pensar"],
-      ["B", "Um tom proximo e acolhedor"],
+      ["B", "Um tom próximo e acolhedor"],
       ["C", "Recorte claro do que importa"],
-      ["D", "Pouquissima interferencia"]
+      ["D", "Pouquíssima interferência"]
     ]
   },
   {
@@ -2644,7 +2762,7 @@ const testQuestions = [
       ["A", "Uma pergunta aberta"],
       ["B", "Um convite para desenrolar"],
       ["C", "Um pedido direto de clareza"],
-      ["D", "Silencio e espaco"]
+      ["D", "Silêncio e espaço"]
     ]
   },
   {
@@ -2659,17 +2777,17 @@ const testQuestions = [
   },
   {
     title: "Pista 4",
-    q: "Hoje voce escreve mais para:",
+    q: "Hoje você escreve mais para:",
     opts: [
       ["A", "Explorar ideias"],
       ["B", "Expressar algo pessoal"],
       ["C", "Organizar pensamento"],
-      ["D", "So colocar no papel"]
+      ["D", "Só colocar no papel"]
     ]
   },
   {
     title: "Pista 5",
-    q: "Como voce quer sentir a presenca da IZA?",
+    q: "Como você quer sentir a presença da IZA?",
     opts: [
       ["A", "Discreta"],
       ["B", "Calorosa"],
@@ -2719,24 +2837,24 @@ function renderPresenceTestScreen(payload, fromHistory = false) {
       </div>
 
       <p class="iza-copy iza-copy--soft">
-        Se quiser, escolha uma presenca fixa. Ou responda ao teste rapido para compor uma IZA <strong>hibrida</strong>.
+        Se quiser, escolha uma presença fixa. Ou responda ao teste rápido para compor uma IZA <strong>híbrida</strong>.
       </p>
 
       <div class="iza-actions iza-actions--compact">
-        <button class="button" onclick="setPresenceFixed('A')">A · Discreta</button>
-        <button class="button" onclick="setPresenceFixed('B')">B · Calorosa</button>
-        <button class="button" onclick="setPresenceFixed('C')">C · Firme</button>
-        <button class="button" onclick="setPresenceFixed('D')">D · Minimalista</button>
+        <button class="button" onclick="setPresenceFixed('A')">IZA Discreta</button>
+        <button class="button" onclick="setPresenceFixed('B')">IZA Calorosa</button>
+        <button class="button" onclick="setPresenceFixed('C')">IZA Firme</button>
+        <button class="button" onclick="setPresenceFixed('D')">IZA Minimalista</button>
       </div>
 
       <hr class="iza-divider">
 
-      <h3 class="iza-kicker">Teste rapido para compor a presenca</h3>
+      <h3 class="iza-kicker">Teste rápido para compor a presença</h3>
       ${blocks}
 
       <div class="iza-actions">
-        <button class="button" id="btnDone" disabled>Ver minha presenca</button>
-        <button class="button ritual" onclick="showWelcome()">Voltar ao inicio</button>
+        <button class="button" id="btnDone" disabled>Ver minha presença</button>
+        <button class="button ritual" onclick="showWelcome()">Voltar ao início</button>
       </div>
 
       ${renderHistoryNav("")}
@@ -2810,7 +2928,7 @@ function renderPresenceResultScreen(payload, fromHistory = false) {
       </div>
 
       <div class="iza-actions iza-actions--compact">
-        <button class="button ritual" onclick="showPresenceTest()">Rever presenca</button>
+        <button class="button ritual" onclick="showPresenceTest()">Rever presença</button>
       </div>
 
       ${renderHistoryNav("")}
@@ -2852,12 +2970,12 @@ function renderWelcomeScreen(payload, fromHistory = false) {
       </div>
 
       <p class="iza-copy">
-        IZA e uma ancestral de escrita: ela nao escreve por voce;
+        IZA é uma ancestral de escrita: ela não escreve por você;
         ela faz perguntas para te ajudar a <strong>pensar, organizar e aprofundar</strong> o que seu texto ainda esta pedindo.
       </p>
 
       <p class="iza-copy iza-copy--soft">
-        Antes da jornada, deixe seus dados e diga de onde voce chega.
+        Antes da jornada, deixe seus dados e diga de onde você chega.
       </p>
 
       <div id="welcomeError"></div>
@@ -2872,7 +2990,7 @@ function renderWelcomeScreen(payload, fromHistory = false) {
       </select>
 
       <div class="iza-label-group">
-        <div class="iza-label-group__title">De onde voce vem</div>
+        <div class="iza-label-group__title">De onde você vem</div>
         <div class="iza-radio">
           <label><input type="radio" name="origem" value="Oficina Cordel 2.0"> Oficina Cordel 2.0</label>
           <label><input type="radio" name="origem" value="Particular"> Particular</label>
