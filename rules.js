@@ -274,6 +274,112 @@
     }
   };
 
+  const ROGERIAN_RULE_REFRESH = {
+    travado: [
+      "Quando isso fica {0}, onde a escrita para primeiro: abertura, centro ou final?",
+      "Tem algo que você parece proteger quando fica {0}. O que não quer perder no texto?",
+      "Se eu te pedisse só uma frase possível agora, qual viria mesmo assim?"
+    ],
+    eu_sinto: [
+      "Tem algo de {0} no que você trouxe. Onde isso encosta mais forte no texto?",
+      "Se esse {0} virasse cena, o que a gente veria primeiro?",
+      "Esse {0} te aproxima da frase ou faz você recuar dela?"
+    ],
+    medo: [
+      "Você nomeou {0}. A reação de quem pesa mais aqui: leitor, você ou o tema?",
+      "Quando entra {0}, o que você tenta manter sob controle no texto?",
+      "Se o {0} baixasse um pouco, o que já daria para dizer agora?",
+      "Se for “{0} de {1}”, qual é o menor risco que ainda vale assumir hoje?"
+    ],
+    nao_sei: [
+      "Tem uma oscilação aqui. Entre quais duas direções você está?",
+      "Mesmo dentro dessa dúvida, o que você já sabe com certeza?",
+      "Qual pergunta, se ganhasse resposta, soltaria essa parte do texto?"
+    ],
+    default: [
+      "No que você disse, o que está mais vivo agora?",
+      "Se eu devolver isso em uma palavra-chave, qual você sustenta?",
+      "O que você quer que continue ecoando no leitor depois disso?",
+      "O próximo passo aqui é nomear melhor, mostrar uma cena ou sustentar a ideia?"
+    ]
+  };
+
+  function refreshBaseRuleResponses() {
+    RULES_BASE.forEach((rule) => {
+      if (!rule || !ROGERIAN_RULE_REFRESH[rule.name]) return;
+      rule.responses = ROGERIAN_RULE_REFRESH[rule.name].slice();
+    });
+  }
+
+  function refinePersonalityOverrides() {
+    RULE_OVERRIDES.A.default = [
+      "Qual palavra-chave desse trecho você quer sustentar?",
+      "O que aqui merece mais escuta antes de seguir?"
+    ];
+    RULE_OVERRIDES.A.nao_sei = [
+      "Sem pressa: qual parte você já sabe com certeza?",
+      "Se você não decidir tudo agora, qual pequena certeza fica?"
+    ];
+
+    RULE_OVERRIDES.B.eu_sinto = [
+      "Obrigada por dividir isso. Quando vem {0}, o que esse tema te pede com mais cuidado?",
+      "Fico ouvindo {0} no que você disse. Onde isso pede mais delicadeza?"
+    ];
+    RULE_OVERRIDES.B.medo = [
+      "Tô com você nisso. Se o {0} baixasse um pouco, o que você conseguiria dizer agora?",
+      "Vamos chegar perto disso sem forcar. O que o {0} ainda deixa dizer?"
+    ];
+    RULE_OVERRIDES.B.default = [
+      "Entendi você. Qual parte desse trecho você quer cuidar melhor agora?",
+      "Do que você disse, qual ponto merece mais escuta antes de seguir?"
+    ];
+
+    RULE_OVERRIDES.C.estrutura_texto = [
+      "Direto: qual função exata do {0} no texto: abrir, provar ou fechar?",
+      "Recorte: o {0} existe para situar, sustentar ou concluir?"
+    ];
+    RULE_OVERRIDES.C.porque = [
+      "Direto: qual prova concreta sustenta esse “porque” em uma linha?",
+      "Se esse “porque” fosse testado agora, qual evidência ficaria de pé?"
+    ];
+    RULE_OVERRIDES.C.excesso = [
+      "Direto: corte para 2 frases. Quais ficam?",
+      "O que sai sem derrubar a ideia?"
+    ];
+    RULE_OVERRIDES.C.default = [
+      "Direto: formule sua tese em uma frase objetiva.",
+      "Recorte o ponto central em uma frase."
+    ];
+
+    RULE_OVERRIDES.D.default = ["Qual é o núcleo disso?", "Diga o centro em uma frase."];
+    RULE_OVERRIDES.D.excesso = ["Corte para duas frases. Quais ficam?", "O que fica se você reduzir?"];
+    RULE_OVERRIDES.D.pergunta = ["O que essa pergunta quer decidir?", "Qual e o ponto da pergunta?"];
+
+    RULE_OVERRIDES.H.default = [
+      "Tem um núcleo vivo aqui. Qual parte você quer ampliar primeiro?",
+      "Aqui há ao mesmo tempo escuta e recorte. Qual lado pede mais trabalho agora?"
+    ];
+    RULE_OVERRIDES.H.nao_consigo = [
+      "Você trouxe uma trava em “{0}”. Quer acolher o ponto sensível e definir um próximo passo concreto?",
+      "Tem uma trava aqui. O que pede cuidado e o que pede decisão?"
+    ];
+    RULE_OVERRIDES.H.eu_sinto = [
+      "Isso tem carga emocional ({0}). O que te acolhe e, ao mesmo tempo, te move no texto?",
+      "O que em {0} pede escuta e o que em {0} pede forma?"
+    ];
+    RULE_OVERRIDES.H.contraste = [
+      "Há um contraste aqui. Qual lado pede cuidado e qual lado pede decisão?",
+      "Onde esse contraste te divide e onde ele te esclarece?"
+    ];
+    RULE_OVERRIDES.H.estrutura_texto = [
+      "Vamos equilibrar forma e verdade: qual função o {0} precisa cumprir agora?",
+      "Sem perder a escuta: que forma ajuda esse {0} a respirar melhor?"
+    ];
+  }
+
+  refreshBaseRuleResponses();
+  refinePersonalityOverrides();
+
   function uniqueMerge(primary, secondary, maxLen) {
     const out = [];
     for (const item of (primary || []).concat(secondary || [])) {
