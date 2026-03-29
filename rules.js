@@ -327,7 +327,7 @@
     ];
     RULE_OVERRIDES.B.medo = [
       "Tô com você nisso. Se o {0} baixasse um pouco, o que você conseguiria dizer agora?",
-      "Vamos chegar perto disso sem forcar. O que o {0} ainda deixa dizer?"
+      "Vamos chegar perto disso sem forçar. O que o {0} ainda deixa dizer?"
     ];
     RULE_OVERRIDES.B.default = [
       "Entendi você. Qual parte desse trecho você quer cuidar melhor agora?",
@@ -353,7 +353,7 @@
 
     RULE_OVERRIDES.D.default = ["Qual é o núcleo disso?", "Diga o centro em uma frase."];
     RULE_OVERRIDES.D.excesso = ["Corte para duas frases. Quais ficam?", "O que fica se você reduzir?"];
-    RULE_OVERRIDES.D.pergunta = ["O que essa pergunta quer decidir?", "Qual e o ponto da pergunta?"];
+    RULE_OVERRIDES.D.pergunta = ["O que essa pergunta quer decidir?", "Qual é o ponto da pergunta?"];
 
     RULE_OVERRIDES.H.default = [
       "Tem um núcleo vivo aqui. Qual parte você quer ampliar primeiro?",
