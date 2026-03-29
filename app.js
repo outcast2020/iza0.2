@@ -459,7 +459,7 @@ function presenceMessageText(p) {
   const base = {
     A: "Vou aparecer de leve, abrindo espaço para você perceber o que seu próprio texto já sabe.",
     B: "Vou seguir perto, com calor e escuta, acolhendo o que aparecer sem tomar o lugar da sua escrita.",
-    C: "Vou entrar com recorte, precisao e contraste, para a ideia ganhar forma e sustento.",
+    C: "Vou entrar com recorte, precisão e contraste, para a ideia ganhar forma e sustento.",
     D: "Vou quase sumir: mínimo ruído, quase nenhum comentário, mais campo para você escrever e decidir."
   };
   return (base[p.key] || "") + " Se quiser, dá para recalibrar isso depois.";
@@ -519,16 +519,16 @@ function pick(arr) {
 function presencePhraseSets() {
   return {
     A: {
-      softeners: ["", "Se fizer sentido,", "Talvez,", "Pode ser que,"],
+      softeners: [""],
       closings: ["", "Se quiser, siga.", "Continue quando fizer sentido.", "Veja se isso pede mais um passo."]
     },
     B: {
-      softeners: ["Entendi.", "Estou com você.", "Obrigada por dividir isso.", "Vamos por partes."],
+      softeners: [""],
       closings: ["Se quiser, eu sigo com você.", "Pode ir no seu ritmo.", "Vamos com calma.", "Eu fico por perto."]
     },
     C: {
-      softeners: ["Vamos ao núcleo.", "Certo. Vamos delimitar.", "Foco no ponto central."],
-      closings: ["Responda em uma frase.", "Agora sustente isso.", "Siga com precisao.", "Recorte melhor."]
+      softeners: [""],
+      closings: ["Responda em uma frase.", "Agora sustente isso.", "Siga com precisão.", "Recorte melhor."]
     },
     D: {
       softeners: [""],
@@ -570,6 +570,8 @@ function presenceWrap(p, coreText) {
     p.key === "D" || (p.key === "H" && (state.presenceMix?.D || 0) > 0.60);
 
   if (minimalNow) return coreText.trim();
+
+  if (/\n/.test(coreText)) soft = "";
 
   const prefix = soft ? soft + " " : "";
   const suffix = close ? "\n" + close : "";
@@ -1345,7 +1347,7 @@ function refinedLeadLine(userText) {
       "Vamos ouvir melhor o que apareceu aqui.",
       ct === "ferida" ? "Isso toca num ponto sensível." : "",
       ct === "desejo" ? "Isso tem pulsação." : "",
-      ct === "pergunta" ? "Essa pergunta esta viva." : "",
+        ct === "pergunta" ? "Essa pergunta está viva." : "",
       ct === "afirmacao" ? "Isso afirma algo importante." : ""
     ].filter(Boolean);
     return pick(bank);
@@ -1416,7 +1418,7 @@ function composeReply(p, userText, mirror, qText, minimalistNow) {
 
   const parts = [];
   if (lead && p.key === "B") parts.push(lead);
-  if (safeMirror) parts.push(safeMirror);
+  if (safeMirror && !(p.key === "B" && bridge && Math.random() < 0.6)) parts.push(safeMirror);
   if (lead && p.key !== "B") parts.push(lead);
   if (bridge) parts.push(bridge);
 
@@ -1434,7 +1436,20 @@ function composeReply(p, userText, mirror, qText, minimalistNow) {
     parts.push(closing);
   }
 
-  return parts.filter(Boolean).join("\n").trim();
+  return dedupeResponseLines(parts).join("\n").trim();
+}
+
+function dedupeResponseLines(lines) {
+  const seen = new Set();
+  return (lines || [])
+    .map((line) => String(line || "").trim())
+    .filter(Boolean)
+    .filter((line) => {
+      const key = normalizeSearchText(line).replace(/[^a-z0-9]+/g, " ").trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 // ============================
@@ -1617,7 +1632,7 @@ const TRACKS = {
       },
       {
         key: "centro",
-        prompt: "Em 1 frase, qual e o centro disso?",
+        prompt: "Em 1 frase, qual é o centro disso?",
         onUser: (t) => {
           state.centerType = null;
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
@@ -1670,7 +1685,7 @@ const TRACKS = {
   },
 
   intermediaria: {
-    name: "Jornada Intermediaria (7 passos)",
+    name: "Jornada Intermediária (7 passos)",
     steps: [
       {
         key: "tema",
@@ -1709,7 +1724,7 @@ const TRACKS = {
       {
         key: "concreto",
         prompt: "Passo 4 — Concreto\nOnde isso aparece de forma concreta?",
-        onUser: (t) => izaReply(t) + "\n\nPasso 5 — Contraste\nNomeie duas forcas em tensao (ex.: medo x vontade)."
+        onUser: (t) => izaReply(t) + "\n\nPasso 5 — Contraste\nNomeie duas forças em tensão (ex.: medo x vontade)."
       },
       {
         key: "contraste",
@@ -1743,7 +1758,7 @@ const TRACKS = {
       },
       {
         key: "centro",
-        prompt: "Em 1 frase, qual e o centro disso?",
+        prompt: "Em 1 frase, qual é o centro disso?",
         onUser: (t) => {
           state.centerType = null;
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
@@ -1893,7 +1908,7 @@ function renderPromptScreen(payload, fromHistory = false) {
 
       <p class="iza-question">${escapeHtml(question).replace(/\n/g, "<br>")}</p>
 
-      <textarea id="txt" class="input-area" rows="5" ${canSend ? "" : "disabled"} placeholder="${canSend ? "" : "Esta resposta ja foi registrada."}"></textarea>
+      <textarea id="txt" class="input-area" rows="5" ${canSend ? "" : "disabled"} placeholder="${canSend ? "" : "Esta resposta já foi registrada."}"></textarea>
 
       ${canSend
         ? `<button id="btnSend" class="button">Registrar resposta</button>`
@@ -1992,12 +2007,15 @@ function showIza(text, next) {
 
 // -------------------- FINALIZE SCREEN (COPY / DOWNLOAD / SEND STATUS) --------------------
 function buildTranscript() {
+  const trackLabel = (TRACKS[state.trackKey]?.name || state.trackKey || "")
+    .replace(/\s*\([^)]*\)\s*/g, "")
+    .trim();
   const header =
     `IZA no Cordel 2.0 - Registro\n` +
     `Nome: ${state.name}\nEmail: ${state.email}\n` +
-    `Municipio: ${state.municipio || ""}\nEstado: ${state.estadoUF || ""}\nOrigem: ${state.origem || ""}\n` +
-    `Trilha: ${state.trackKey}\nPresença: ${state.presence?.name || state.presenceKey}\n` +
-    `Inicio: ${state.startedAtISO}\nFim: ${nowISO()}\n` +
+    `Município: ${state.municipio || ""}\nEstado: ${state.estadoUF || ""}\nOrigem: ${state.origem || ""}\n` +
+    `Trilha: ${trackLabel}\nPresença: ${state.presence?.name || state.presenceKey}\n` +
+    `Início: ${state.startedAtISO}\nFim: ${nowISO()}\n` +
     `---\n\n`;
 
   const body = state.turns
@@ -2137,7 +2155,7 @@ function buildJourneySynthesis(summary, keywords) {
   lines.push(
     focus
       ? `Na ${trackName.toLowerCase()}, seu texto foi abrindo caminho em torno de ${focus}.`
-      : `Na ${trackName.toLowerCase()}, seu texto foi abrindo caminho e encontrando um eixo proprio.`
+      : `Na ${trackName.toLowerCase()}, seu texto foi abrindo caminho e encontrando um eixo próprio.`
   );
 
   if (state.centerType) {
@@ -2155,7 +2173,7 @@ function buildJourneySynthesis(summary, keywords) {
   if (summary.emergentPhrase) {
     lines.push(`Ficou ecoando esta linha: "${clipText(summary.emergentPhrase, 120)}".`);
   } else if (summary.lastText) {
-    lines.push(`No fim, ficou mais visivel isto: "${clipText(summary.lastText, 120)}".`);
+    lines.push(`No fim, ficou mais visível isto: "${clipText(summary.lastText, 120)}".`);
   }
 
   const synthesis = lines.join(" ").replace(/\s+/g, " ").trim();
@@ -2168,7 +2186,7 @@ function buildFallbackLiteraryGift(keywords) {
   return {
     source: "fallback",
     seed,
-    intro: "Não encontrei um eco direto na biblioteca agora, mas IZA não te deixa sair de mãos vazias.",
+    intro: "Desta vez, a biblioteca não abriu um verso nítido. Ainda assim, IZA não te deixa sair de mãos vazias.",
     fragment: `Guarde ${seed}. Quando a trilha parece terminar, ela ainda conversa com ${companion}. O que ficou vivo aqui talvez seja o começo de outra frase.`,
     author: "IZA",
     title: "Eco de encerramento",
@@ -2207,10 +2225,10 @@ function buildGiftLookupFallback(payload, response) {
     source: "fallback_local",
     intro:
       reason === "timeout"
-        ? "A biblioteca poética demorou além do esperado para responder. IZA guardou o seu fechamento e te deixa este presente por agora."
+        ? "A biblioteca poética demorou mais do que devia para responder. IZA guardou o seu fechamento e te deixa este eco por agora."
         : reason === "network"
-          ? "A ligação com a biblioteca poética falhou neste momento. IZA guardou o seu percurso e te entrega este fecho por agora."
-          : "A biblioteca poética encontrou um problema ao buscar o presente. IZA guardou o seu percurso e te entrega este fecho por agora."
+          ? "A ligação com a biblioteca poética falhou neste momento. IZA guardou o seu percurso e te entrega este eco por agora."
+          : "A biblioteca poética encontrou um desvio na busca. IZA guardou o seu percurso e te entrega este eco por agora."
   };
 }
 
@@ -2463,7 +2481,7 @@ function renderSendStatus() {
   if (state.registerStatus === "sending") return "IZA está guardando sua síntese e seu registro...";
 
   if (state.registerStatus === "sent") {
-    return "Registro guardado. Se você informou um e-mail válido, a síntese e o presente literário seguem em envio sem travar o encerramento.";
+    return "Registro guardado. Se você informou um e-mail válido, a síntese e o presente literário seguem sendo enviados sem travar o encerramento.";
   }
 
   if (state.registerStatus === "failed") {
@@ -2922,9 +2940,9 @@ function renderPresenceResultScreen(payload, fromHistory = false) {
       <p class="iza-section-title"><strong>Escolha o caminho da escrita</strong></p>
       <div class="iza-copy iza-copy--soft">Cada trilha acende um jeito diferente de cavar o texto.</div>
       <div class="iza-actions">
-        <button class="button" onclick="startTrack('iniciante')">Seguir na iniciante</button>
-        <button class="button" onclick="startTrack('intermediaria')">Ir para a intermediaria (7 passos)</button>
-        <button class="button" onclick="startTrack('inspirada')">Abrir conversa livre</button>
+        <button class="button" onclick="startTrack('iniciante')">Seguir na trilha iniciante</button>
+        <button class="button" onclick="startTrack('intermediaria')">Ir para a trilha intermediária</button>
+        <button class="button" onclick="startTrack('inspirada')">Abrir a conversa livre</button>
       </div>
 
       <div class="iza-actions iza-actions--compact">
@@ -2971,7 +2989,7 @@ function renderWelcomeScreen(payload, fromHistory = false) {
 
       <p class="iza-copy">
         IZA é uma ancestral de escrita: ela não escreve por você;
-        ela faz perguntas para te ajudar a <strong>pensar, organizar e aprofundar</strong> o que seu texto ainda esta pedindo.
+        ela faz perguntas para te ajudar a <strong>pensar, organizar e aprofundar</strong> o que seu texto ainda está pedindo.
       </p>
 
       <p class="iza-copy iza-copy--soft">
@@ -2997,7 +3015,7 @@ function renderWelcomeScreen(payload, fromHistory = false) {
         </div>
       </div>
 
-      <button class="button" onclick="validateStart()">Comecar jornada</button>
+      <button class="button" onclick="validateStart()">Começar jornada</button>
 
       ${renderHistoryNav("")}
     `)
@@ -3047,8 +3065,8 @@ window.validateStart = function () {
 
   const missing = [];
   if (!state.name) missing.push("nome");
-  if (!state.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email)) missing.push("e-mail valido");
-  if (!state.municipio) missing.push("municipio");
+  if (!state.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email)) missing.push("e-mail válido");
+  if (!state.municipio) missing.push("município");
   if (!state.estadoUF) missing.push("estado");
   if (!state.origem) missing.push("origem");
 
