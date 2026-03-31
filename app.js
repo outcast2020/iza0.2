@@ -49,6 +49,9 @@ const state = {
   pageURL: "",
   turns: [],
   centerType: null, // "pergunta"|"afirmacao"|"ferida"|"desejo"|"livre"
+  centerSemanticTail: "",
+  journeyRubric: null,
+  doneChecklist: null,
 
   // para tela final
   finalDraft: "",
@@ -152,7 +155,7 @@ function render(html) {
 }
 function escapeHtml(str) {
   return String(str || "")
-    .replaceAll("&", "&amp;")
+    .replaceAll("&", "&")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
@@ -166,6 +169,7 @@ function pushTurn(role, text, meta = {}) {
       t: nowISO(),
       track: state.trackKey,
       step: state.stepIndex,
+      stepKey: meta.stepKey || currentTrackStepKey(),
       presence: state.presenceKey,
       ...meta
     }
@@ -293,7 +297,7 @@ function enterViewMode() {
 function exitViewMode() {
   state.viewMode = false;
   state.viewIndex = state.viewHistory.length - 1;
-  renderFromHistory(); // agora vai renderizar “ao vivo” com canSend/canContinue true
+  renderFromHistory(); // agora vai renderizar "ao vivo" com canSend/canContinue true
 }
 
 function canGoBack() {
@@ -656,22 +660,6 @@ function swapPronouns(text) {
   return out;
 }
 
-function shortMirror(presence, userText) {
-  const t = (userText || "").trim();
-  if (!t) return presence.key === "D" ? "Continue." : "Pode seguir.";
-  const words = t.split(/\s+/);
-
-  if (presence.mirror === "tiny") {
-    const w = words.slice(0, 6).join(" ");
-    return `“${swapPronouns(w)}—”`;
-  }
-  if (presence.mirror === "short") {
-    const w = words.slice(0, 10).join(" ");
-    return `Você está dizendo: “${swapPronouns(w)}—”.`;
-  }
-  const w = words.slice(0, 16).join(" ");
-  return `Você parece estar dizendo: “${swapPronouns(w)}—”.`;
-}
 
 function applyReasmb(template, match) {
   let out = template;
@@ -682,12 +670,6 @@ function applyReasmb(template, match) {
   return out;
 }
 
-function fallbackUserAnchor(userText) {
-  const t = (userText || "").trim();
-  if (!t) return "isso que você trouxe";
-  const slice = t.split(/\s+/).slice(0, 10).join(" ");
-  return swapPronouns(slice);
-}
 
 function ensureMeaningfulTemplateText(text, userText) {
   let out = String(text || "").trim();
@@ -696,15 +678,15 @@ function ensureMeaningfulTemplateText(text, userText) {
   const anchor = fallbackUserAnchor(userText);
 
   out = out
-    .replace(/“\s*—/g, `“${anchor}—`)
-    .replace(/"\s*—/g, `“${anchor}—`)
-    .replace(/\?\s*—/g, `“${anchor}—`)
-    .replace(/''/g, `“${anchor}—`)
-    .replace(/""/g, `“${anchor}—`);
+    .replace(/"\s*—/g, `"${anchor}—`)
+    .replace(/"\s*—/g, `"${anchor}—`)
+    .replace(/\?\s*—/g, `"${anchor}—`)
+    .replace(/''/g, `"${anchor}—`)
+    .replace(/""/g, `"${anchor}—`);
 
   const onlyPunctuation = /^[\s.,;:!?()[\]{}'"`´—-]+$/;
   if (onlyPunctuation.test(out)) {
-    return `Falando em “${anchor}—”, o que você quer aprofundar agora?`;
+    return `Falando em "${anchor}—", o que você quer aprofundar agora?`;
   }
 
   return out;
@@ -729,10 +711,10 @@ function extractReflectiveAnchor(userText) {
 
   const scored = candidates
     .map((candidate) => {
-      const clean = candidate.replace(/^["'“”]+|["'“”]+$/g, "").trim();
+      const clean = candidate.replace(/^["'""]+|["'""]+$/g, "").trim();
       const words = clean.split(/\s+/).filter(Boolean);
       const lexicalScore = (clean.match(/\b(?:porque|quando|ainda|quase|coragem|medo|desejo|ferida|duvida|amor|vida|texto|caminho|imagem|cena)\b/gi) || []).length;
-      const punctuationPenalty = /(?:[A-ZÀ-Ý]{4,}|[a-zà-ÿ][A-ZÀ-Ý])/.test(clean) ? 2 : 0;
+      const punctuationPenalty = /(?:[A-Z]{4,}|[a-z][A-Z])/.test(clean) ? 2 : 0;
       const score =
         Math.min(8, words.length) +
         lexicalScore * 2 -
@@ -747,37 +729,6 @@ function extractReflectiveAnchor(userText) {
   return swapPronouns(chosen.clean).replace(/\s+/g, " ").trim();
 }
 
-function shortMirror(presence, userText) {
-  const t = (userText || "").trim();
-  if (!t) return presence.key === "D" ? "Continue." : "Pode seguir.";
-  const anchor = extractReflectiveAnchor(t) || swapPronouns(t.split(/\s+/).slice(0, 10).join(" "));
-
-  if (presence.mirror === "tiny") {
-    return `“${anchor}”`;
-  }
-  if (presence.mirror === "short") {
-    if (presence.key === "B") {
-      return pick([
-        `No que você disse, ficou aceso: “${anchor}”.`,
-        `Estou te ouvindo por aqui: “${anchor}”.`
-      ]);
-    }
-    return pick([
-      `Você trouxe isto: “${anchor}”.`,
-      `Tem um ponto vivo aí: “${anchor}”.`
-    ]);
-  }
-  if (presence.key === "C") {
-    return pick([
-      `No centro do que você disse está isto: “${anchor}”.`,
-      `Vou recortar o núcleo assim: “${anchor}”.`
-    ]);
-  }
-  return pick([
-    `O que estou escutando no seu texto é: “${anchor}”.`,
-    `Se eu devolver o que apareceu com mais força, diria: “${anchor}”.`
-  ]);
-}
 
 function fallbackUserAnchor(userText) {
   const anchor = extractReflectiveAnchor(userText);
@@ -845,24 +796,6 @@ function toneByPresence(p, mix) {
   return "discreta";
 }
 
-function adaptRuleByTrack(text) {
-  const base = String(text || "").trim();
-  if (!base) return base;
-
-  if (state.trackKey === "iniciante") {
-    if (/detalhe|cena|concreto|gesto/i.test(base)) return base;
-    return base + " Traga um detalhe concreto (lugar + gesto).";
-  }
-  if (state.trackKey === "intermediaria") {
-    if (/objetiv|1-2 frases|1 frase|duas frases/i.test(base)) return base;
-    return base + " Responda de forma objetiva em 1-2 frases.";
-  }
-  if (state.trackKey === "inspirada") {
-    if (/fluxo|livre|imagem|cena/i.test(base)) return base;
-    return base + " Responda no fluxo, com imagem ou cena.";
-  }
-  return base;
-}
 
 function adaptRuleByPresence(text, p, mix) {
   const base = String(text || "").trim();
@@ -1080,22 +1013,152 @@ function presenceRuleWeight(ruleName, p, mix) {
   return 1;
 }
 
+const SOCRATIC_TRACK_BIAS = {
+  iniciante: 0.95,
+  intermediaria: 1.08,
+  inspirada: 1.18
+};
+
+const SOCRATIC_STEP_BIAS = {
+  iniciante: {
+    nucleo: 1.08,
+    centro: 1.04,
+    tipo_centro: 0.92,
+    atrito: 1.12,
+    cena: 0.42,
+    frase_final: 0.24
+  },
+  intermediaria: {
+    tema: 0.96,
+    centro: 1.05,
+    tipo_centro: 0.94,
+    atrito: 1.12,
+    concreto: 0.72,
+    contraste: 1.08,
+    sintese: 0.78,
+    forma_final: 0.38
+  },
+  inspirada: {
+    abertura: 1.08,
+    centro: 1.02,
+    tipo_centro: 0.96,
+    loop: 1.18
+  }
+};
+
+function currentTrackStepKey() {
+  const track = TRACKS[state.trackKey];
+  const step = track && Array.isArray(track.steps) ? track.steps[state.stepIndex] : null;
+  return step && step.key ? step.key : "";
+}
+
+function getIonMarkers() {
+  return Array.isArray(window.IZA_ION_MARKERS) ? window.IZA_ION_MARKERS : [];
+}
+
+function getIonMarkerLookup() {
+  if (window.__IZA_ION_MARKER_LOOKUP) return window.__IZA_ION_MARKER_LOOKUP;
+
+  const lookup = Object.create(null);
+  getIonMarkers().forEach((bucket) => {
+    const key = String(bucket?.key || "").trim();
+    if (!key) return;
+    lookup[key] = (bucket.markers || [])
+      .map((marker) => normalizeSearchText(marker))
+      .filter(Boolean);
+  });
+
+  window.__IZA_ION_MARKER_LOOKUP = lookup;
+  return lookup;
+}
+
+function countRuleMarkerHits(rule, userText) {
+  const markerKeys = Array.isArray(rule?.markerKeys) ? rule.markerKeys.filter(Boolean) : [];
+  if (!markerKeys.length) return { hits: 0, buckets: 0 };
+
+  const normalized = normalizeSearchText(userText).replace(/[^a-z0-9\s]/g, " ");
+  const lookup = getIonMarkerLookup();
+  let hits = 0;
+  let buckets = 0;
+
+  markerKeys.forEach((key) => {
+    const markers = lookup[key] || [];
+    const bucketHits = markers.filter((marker) => marker && normalized.includes(marker)).length;
+    if (!bucketHits) return;
+    buckets += 1;
+    hits += bucketHits;
+  });
+
+  return { hits, buckets };
+}
+
+function ruleSemanticWeight(rule, userText) {
+  if (!rule) return 1;
+
+  const { hits, buckets } = countRuleMarkerHits(rule, userText);
+  if (!Array.isArray(rule.markerKeys) || !rule.markerKeys.length) return 1;
+
+  if (!buckets) {
+    return rule.styleFamily === "socratic" ? 0.42 : 0.85;
+  }
+
+  return Math.min(1.95, 1 + buckets * 0.28 + Math.min(4, hits) * 0.07);
+}
+
+function ruleTrackStageWeight(rule) {
+  if (!rule) return 1;
+
+  let weight = 1;
+  const trackKey = state.trackKey;
+  const stepKey = currentTrackStepKey();
+
+  if (Array.isArray(rule.allowInTracks) && trackKey && !rule.allowInTracks.includes(trackKey)) {
+    return 0.01;
+  }
+
+  if (rule.trackBias && trackKey && Number.isFinite(rule.trackBias[trackKey])) {
+    weight *= Number(rule.trackBias[trackKey]);
+  }
+
+  if (
+    rule.stepBias &&
+    trackKey &&
+    rule.stepBias[trackKey] &&
+    Number.isFinite(rule.stepBias[trackKey][stepKey])
+  ) {
+    weight *= Number(rule.stepBias[trackKey][stepKey]);
+  }
+
+  if (rule.styleFamily === "socratic") {
+    weight *= SOCRATIC_TRACK_BIAS[trackKey] || 1;
+    if (stepKey && SOCRATIC_STEP_BIAS[trackKey] && Number.isFinite(SOCRATIC_STEP_BIAS[trackKey][stepKey])) {
+      weight *= SOCRATIC_STEP_BIAS[trackKey][stepKey];
+    }
+  }
+
+  return weight;
+}
+
 function getRuleWeight(ruleName, p, mix, trackKey) {
   const byTrack = (TRACK_RULE_WEIGHTS[trackKey] && TRACK_RULE_WEIGHTS[trackKey][ruleName]) || 1;
   const byPresence = presenceRuleWeight(ruleName, p, mix);
   return Math.max(0.01, byTrack * byPresence);
 }
 
-function pickWeightedRule(candidates, p, mix) {
+function pickWeightedRule(candidates, p, mix, userText) {
   const weighted = candidates
     .map((item) => {
       const priority = Math.max(0.05, Number(item.rule?.priority || 1));
       const fallbackPenalty =
         item.rule?.name === "default" && candidates.length > 1 ? 0.08 : 1;
+      const semanticWeight = ruleSemanticWeight(item.rule, userText);
+      const trackStageWeight = ruleTrackStageWeight(item.rule);
       const w =
         getRuleWeight(item.rule?.name, p, mix, state.trackKey) *
         priority *
-        fallbackPenalty;
+        fallbackPenalty *
+        semanticWeight *
+        trackStageWeight;
       return { ...item, weight: w };
     })
     .filter((item) => item.weight > 0);
@@ -1120,7 +1183,7 @@ function runExternalRules(userText, p, mix) {
     candidates.push({ rule, match: m });
   }
 
-  const chosen = pickWeightedRule(candidates, p, mix);
+  const chosen = pickWeightedRule(candidates, p, mix, userText);
   if (!chosen) return null;
 
   const raw = pickRuleResponse(chosen.rule.responses);
@@ -1131,6 +1194,8 @@ function runExternalRules(userText, p, mix) {
   if (!replyOptions.skipToneAdaptation) {
     qText = adaptRuleByTrack(qText);
     qText = adaptRuleByPresence(qText, p, mix);
+  } else if (chosen.rule?.styleFamily === "socratic") {
+    qText = adaptRuleByTrack(qText);
   }
 
   qText = ensureMeaningfulTemplateText(qText, userText);
@@ -1154,45 +1219,45 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:fiz|tentei|criei|escrevi|busco|quero)\b\s+(.*)$/i,
         reasmb: [
-          "O que motivou esse seu agir sobre “{1}—”?",
-          "Ao buscar “{1}—”, qual imagem surgiu primeiro?",
-          "Como essa ação — “{1}—” — pode virar forma (verso, cena, confissão)?"
+          "O que motivou esse seu agir sobre \"{1}\"?",
+          "Ao buscar \"{1}\", qual imagem surgiu primeiro?",
+          "Como essa acao sobre \"{1}\" pode virar forma (verso, cena, confissao)?"
         ],
         memory: [
-          "Voltando em “{1}—”: qual foi o primeiro passo concreto?",
-          "O que você ganhou — e o que você arriscou — ao fazer “{1}—”?"
+          "Voltando em \"{1}\": qual foi o primeiro passo concreto?",
+          "O que voce ganhou e o que voce arriscou ao fazer \"{1}\"?"
         ]
       }
     ]
   },
   {
-    key: /\b(triste|feliz|difícil|confuso|importante|belo|feio)\b/i,
+    key: /\b(triste|feliz|dificil|confuso|importante|belo|feio)\b/i,
     decomps: [
       {
-        re: /.*\b(triste|feliz|difícil|confuso|importante|belo|feio)\b(?:\s+(?:porque|pois)\s+)?(.*)$/i,
+        re: /.*\b(triste|feliz|dificil|confuso|importante|belo|feio)\b(?:\s+(?:porque|pois)\s+)?(.*)$/i,
         reasmb: [
-          "O que torna “{2}—” algo tão “{1}—”?",
-          "Se “{2}—” deixasse de ser “{1}—”, o que sobraria?",
-          "Como esse estado de ser “{1}—” aparece na sua escrita — em imagem ou ritmo?"
+          "O que torna \"{2}\" algo tao \"{1}\"?",
+          "Se \"{2}\" deixasse de ser \"{1}\", o que sobraria?",
+          "Como esse estado de ser \"{1}\" aparece na sua escrita, em imagem ou ritmo?"
         ],
         memory: [
-          "Dá um exemplo pequeno que mostre “{1}—” sem explicar.",
-          "Qual palavra substituiria “{1}—” sem perder a verdade?"
+          "Da um exemplo pequeno que mostre \"{1}\" sem explicar.",
+          "Qual palavra substituiria \"{1}\" sem perder a verdade?"
         ]
       }
     ]
   },
   {
-    key: /\b(família|casa|trabalho|rua|mundo|tempo|vida)\b/i,
+    key: /\b(familia|casa|trabalho|rua|mundo|tempo|vida)\b/i,
     decomps: [
       {
-        re: /.*\b(família|casa|trabalho|rua|mundo|tempo|vida)\b(.*)$/i,
+        re: /.*\b(familia|casa|trabalho|rua|mundo|tempo|vida)\b(.*)$/i,
         reasmb: [
-          "Qual detalhe concreto de “{1}—” você quer salvar no texto?",
-          "Como “{1}—” muda o ritmo do que você escreve?",
-          "O que em “{1}—” ainda está guardado e não foi dito?"
+          "Qual detalhe concreto de \"{1}\" voce quer salvar no texto?",
+          "Como \"{1}\" muda o ritmo do que voce escreve?",
+          "O que em \"{1}\" ainda esta guardado e nao foi dito?"
         ],
-        memory: ["Volta em “{1}—”: onde exatamente isso acontece (lugar/horário/pessoa)?"]
+        memory: ["Volta em \"{1}\": onde exatamente isso acontece (lugar, horario, pessoa)?"]
       }
     ]
   },
@@ -1202,39 +1267,39 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:sinto|sentir)\b\s+(.*)$/i,
         reasmb: [
-          "Onde esse sentir — “{1}—” — se localiza na sua história?",
-          "Essa emoção sobre “{1}—” ajuda ou trava sua autoria?",
-          "Consegue descrever “{1}—” sem usar o nome do sentimento?"
+          "Onde esse sentir, \"{1}\", se localiza na sua historia?",
+          "Essa emocao sobre \"{1}\" ajuda ou trava sua autoria?",
+          "Consegue descrever \"{1}\" sem usar o nome do sentimento?"
         ],
-        memory: ["Qual imagem carregaria “{1}—” sem dizer o nome dela?"]
+        memory: ["Qual imagem carregaria \"{1}\" sem dizer o nome dela?"]
       }
     ]
   },
   {
-    key: /\b(não posso|não consigo|limite|bloqueio)\b/i,
+    key: /\b(nao posso|nao consigo|limite|bloqueio)\b/i,
     decomps: [
       {
-        re: /.*\b(?:não consigo|não posso)\b\s+(.*)$/i,
+        re: /.*\b(?:nao consigo|nao posso)\b\s+(.*)$/i,
         reasmb: [
-          "Esse limite em “{1}—” é uma barreira real — ou uma precaução sua?",
-          "O que mudaria no texto se você pudesse “{1}—”?",
-          "Vamos olhar o outro lado de “{1}—”: o que é possível hoje, do jeito mínimo?"
+          "Esse limite em \"{1}\" e uma barreira real ou uma precaucao sua?",
+          "O que mudaria no texto se voce pudesse \"{1}\"?",
+          "Vamos olhar o outro lado de \"{1}\": o que e possivel hoje, do jeito minimo?"
         ],
-        memory: ["Se fosse só 1% possível, como seria “{1}—” ?"]
+        memory: ["Se fosse so 1% possivel, como seria \"{1}\"?"]
       }
     ]
   },
   {
-    key: /\b(sempre|nunca|todo|ninguém|todos)\b/i,
+    key: /\b(sempre|nunca|todo|ninguem|todos)\b/i,
     decomps: [
       {
-        re: /.*\b(sempre|nunca|ninguém|todos)\b(.*)$/i,
+        re: /.*\b(sempre|nunca|ninguem|todos)\b(.*)$/i,
         reasmb: [
-          "O que faz “{1}—” soar tão absoluto pra você aqui?",
-          "Pensa numa exceção para “{1}{2}—”. Como ela soaria?",
-          "Onde esse “{1}—” aparece hoje, agora, de modo concreto?"
+          "O que faz \"{1}\" soar tao absoluto pra voce aqui?",
+          "Pensa numa excecao para \"{1}{2}\". Como ela soaria?",
+          "Onde esse \"{1}\" aparece hoje, agora, de modo concreto?"
         ],
-        memory: ["Qual exceção pequena te faria respirar um pouco?"]
+        memory: ["Qual excecao pequena te faria respirar um pouco?"]
       }
     ]
   },
@@ -1244,25 +1309,25 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:talvez|acho|parece|quem sabe)\b\s+(.*)$/i,
         reasmb: [
-          "Se você tivesse certeza sobre “{1}—”, o texto seria o mesmo?",
-          "O que sustenta essa dúvida sobre “{1}—”?",
-          "A incerteza sobre “{1}—” pode virar lugar de criação?"
+          "Se voce tivesse certeza sobre \"{1}\", o texto seria o mesmo?",
+          "O que sustenta essa duvida sobre \"{1}\"?",
+          "A incerteza sobre \"{1}\" pode virar lugar de criacao?"
         ],
-        memory: ["Qual parte de “{1}—” você mais quer testar em palavras?"]
+        memory: ["Qual parte de \"{1}\" voce mais quer testar em palavras?"]
       }
     ]
   },
   {
-    key: /\b(você|iza|máquina|computador)\b/i,
+    key: /\b(voce|iza|maquina|computador)\b/i,
     decomps: [
       {
-        re: /.*\b(?:você|iza|máquina|computador)\b\s*(.*)$/i,
+        re: /.*\b(?:voce|iza|maquina|computador)\b\s*(.*)$/i,
         reasmb: [
-          "Eu estou aqui para espelhar seu pensamento. O que “{1}—” revela sobre você?",
-          "O que muda no seu texto quando você me usa como espelho?",
-          "Como eu posso te ajudar a deixar “{1}—” mais claro em 1 frase?"
+          "Eu estou aqui para espelhar seu pensamento. O que \"{1}\" revela sobre voce?",
+          "O que muda no seu texto quando voce me usa como espelho?",
+          "Como eu posso te ajudar a deixar \"{1}\" mais claro em 1 frase?"
         ],
-        memory: ["Você quer mais silêncio ou mais perguntas agora?"]
+        memory: ["Voce quer mais silencio ou mais perguntas agora?"]
       }
     ]
   },
@@ -1272,11 +1337,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:porque|pois|por causa(?:\s+de)?)\b\s+(.*)$/i,
         reasmb: [
-          "Essa razão — “{1}—” — é a única possível?",
-          "Se não fosse por “{1}—”, que outra causa existiria?",
-          "Como essa explicação muda sua voz no papel?"
+          "Essa razao, \"{1}\", e a unica possivel?",
+          "Se nao fosse por \"{1}\", que outra causa existiria?",
+          "Como essa explicacao muda sua voz no papel?"
         ],
-        memory: ["Você prefere explicar “{1}—” ou mostrar em cena?"]
+        memory: ["Voce prefere explicar \"{1}\" ou mostrar em cena?"]
       }
     ]
   },
@@ -1286,11 +1351,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:sonho|desejo|imagino)\b\s+(.*)$/i,
         reasmb: [
-          "Qual é a cor, som ou textura desse “{1}—”?",
-          "Como “{1}—” projeta quem você é hoje?",
-          "O que “{1}—” traz de novo para sua escrita?"
+          "Qual e a cor, som ou textura desse \"{1}\"?",
+          "Como \"{1}\" projeta quem voce e hoje?",
+          "O que \"{1}\" traz de novo para sua escrita?"
         ],
-        memory: ["Qual micro-ação hoje aproxima “{1}—” ?"]
+        memory: ["Qual micro-acao hoje aproxima \"{1}\"?"]
       }
     ]
   },
@@ -1300,11 +1365,11 @@ const IZA_SCRIPT = [
       {
         re: /.*\b(?:atrito|luta|conflito|problema)\b\s*(.*)$/i,
         reasmb: [
-          "Qual é o coração desse “{1}—”?",
-          "Esse conflito em “{1}—” gera movimento ou estagnação?",
-          "O que está em risco quando você encara “{1}—”?"
+          "Qual e o coracao desse \"{1}\"?",
+          "Esse conflito em \"{1}\" gera movimento ou estagnacao?",
+          "O que esta em risco quando voce encara \"{1}\"?"
         ],
-        memory: ["Qual é o ponto de virada dentro de “{1}—” ?"]
+        memory: ["Qual e o ponto de virada dentro de \"{1}\"?"]
       }
     ]
   },
@@ -1316,10 +1381,10 @@ const IZA_SCRIPT = [
         reasmb: [
           "Pode desenvolver mais essa ideia?",
           "Onde isso aparece concretamente?",
-          "O que aqui ainda está implícito?",
-          "Como isso soaria se fosse uma confissão?"
+          "O que aqui ainda esta implicito?",
+          "Como isso soaria se fosse uma confissao?"
         ],
-        memory: ["Volte no centro: qual frase você quer que fique?"]
+        memory: ["Volte no centro: qual frase voce quer que fique?"]
       }
     ]
   }
@@ -1392,109 +1457,17 @@ function centerLensLine() {
   return pick(arr);
 }
 
-function leadLine(userText) {
-  const p = state.presence || PRESENCES.A;
-  const t = (userText || "").trim();
-  if (!t) return "";
 
-  if (p.key === "D") return "";
 
-  if (p.key === "H" && state.presenceMix) {
-    const mix = state.presenceMix;
-    if ((mix.D || 0) > 0.55) return "";
-    if ((mix.C || 0) > 0.45) return pick(["Ok.", "Certo.", "Registrado."]);
-    if ((mix.B || 0) > 0.35) return pick([
-      "Eu tô aqui com você.",
-      "Obrigado por dizer isso.",
-      "Entendi — isso importa."
-    ]);
-    return pick(["Ok.", "Entendi."]);
-  }
-
-  if (p.key === "A") return pick(["Ok.", "Entendi.", "Certo."]);
-
-  if (p.key === "B") {
-    const ct = state.centerType;
-    const bank = [
-      "Obrigado por confiar isso ao texto.",
-      "Eu tô aqui com você, sem pressa.",
-      "Entendi — isso tem peso.",
-      ct === "ferida" ? "Isso toca num ponto sensível." : "",
-      ct === "desejo" ? "Isso tem pulsação." : "",
-      ct === "pergunta" ? "Essa pergunta tem força." : "",
-      ct === "afirmacao" ? "Isso afirma algo importante." : ""
-    ].filter(Boolean);
-    return pick(bank);
-  }
-
-  if (p.key === "C") return pick(["Vamos focar.", "Ok. Seja específico.", "Certo. Vamos delimitar."]);
-
-  return "";
-}
-
-function refinedPresenceClosing(p) {
-  const base = {
-    A: ["", "Se quiser, siga.", "Vale cavar mais um pouco.", "Continue quando a próxima frase aparecer."],
-    B: ["", "Pode ir no seu ritmo.", "Se quiser, eu sigo com você.", "Há algo aí que ainda pode florescer.", "Vamos cuidar um pouco mais disso."],
-    C: ["", "Responda em uma frase.", "Nomeie melhor o ponto.", "Agora sustente isso.", "Seja mais preciso."],
-    D: ["", "Siga.", "Mais."]
-  };
-
-  if (p.key === "H" && state.presenceMix) {
-    const mix = state.presenceMix;
-    const pickFrom =
-      (mix.D || 0) > 0.5 ? base.D :
-        (mix.C || 0) > 0.4 ? base.C :
-          (mix.B || 0) > 0.35 ? base.B : base.A;
-    return pick(pickFrom);
-  }
-
-  return pick(base[p.key] || base.A);
-}
-
-function refinedLeadLine(userText) {
-  const p = state.presence || PRESENCES.A;
-  const t = (userText || "").trim();
-  if (!t || p.key === "D") return "";
-
-  if (p.key === "H" && state.presenceMix) {
-    const mix = state.presenceMix;
-    if ((mix.D || 0) > 0.55) return "";
-    if ((mix.C || 0) > 0.45) return pick(["Vamos ao núcleo.", "Delimite o ponto central.", "Recorte melhor o que apareceu."]);
-    if ((mix.B || 0) > 0.35) return pick(["Estou com você.", "Isso importa.", "Obrigada por trazer isso.", "Vamos escutar melhor esse ponto."]);
-    return pick(["Entendi.", "Certo.", "Vamos olhar isso melhor."]);
-  }
-
-  if (p.key === "A") return pick(["Entendi.", "Certo.", "Vamos deixar isso respirar.", "Talvez o texto já tenha uma pista aí."]);
-
-  if (p.key === "B") {
-    const ct = state.centerType;
-    const bank = [
-      "Obrigada por confiar isso ao texto.",
-      "Estou com você, sem pressa.",
-      "Entendi. Isso pede escuta.",
-      "Vamos ouvir melhor o que apareceu aqui.",
-      ct === "ferida" ? "Isso toca num ponto sensível." : "",
-      ct === "desejo" ? "Isso tem pulsação." : "",
-        ct === "pergunta" ? "Essa pergunta está viva." : "",
-      ct === "afirmacao" ? "Isso afirma algo importante." : ""
-    ].filter(Boolean);
-    return pick(bank);
-  }
-
-  if (p.key === "C") return pick(["Vamos ao núcleo.", "Seja preciso.", "Delimite o que está em jogo.", "Recorte o ponto central."]);
-
-  return "";
-}
 
 function fixEmptyQuestion(qText) {
   const normalized = String(qText || "").trim();
   const hasEmptyQuotes =
-    normalized.includes("“—") ||
+    normalized.includes("\"\u2014") ||
     normalized.includes('""') ||
     normalized.includes("''") ||
-    /\?\s*—/.test(normalized) ||
-    /“\s*—/.test(normalized) ||
+    /\?\s*\u2014/.test(normalized) ||
+    /"\s*\u2014/.test(normalized) ||
     /"\s*"/.test(normalized);
 
   if (!hasEmptyQuotes) return normalized;
@@ -1596,8 +1569,17 @@ function shortMirror(presence, userText) {
 function adaptRuleByTrack(text) {
   const base = String(text || "").trim();
   if (!base) return base;
+  const stepKey = currentTrackStepKey();
 
   if (state.trackKey === "iniciante") {
+    if (stepKey === "cena") {
+      if (/detalhe|cena|concreto|gesto|lugar|alguem/i.test(base)) return base;
+      return base + " Amarre isso numa cena: lugar, alguem e um gesto.";
+    }
+    if (stepKey === "frase_final") {
+      if (/frase|linha|sintese|versao|formule/i.test(base)) return base;
+      return base + " Responda com uma unica frase que voce sustentaria no final.";
+    }
     if (/detalhe|cena|concreto|gesto|lugar/i.test(base)) return base;
     if (isSocraticPrompt(base)) return base;
     if (/\?$/.test(base) && base.length >= 42) return base;
@@ -1608,6 +1590,18 @@ function adaptRuleByTrack(text) {
     ]);
   }
   if (state.trackKey === "intermediaria") {
+    if (stepKey === "concreto") {
+      if (/cena|fala|gesto|lugar|concreto/i.test(base)) return base;
+      return base + " Leve isso para uma cena, fala, gesto ou lugar.";
+    }
+    if (stepKey === "sintese") {
+      if (/3 linhas|tres linhas|sintese|reuna/i.test(base)) return base;
+      return base + " Reuna a resposta em ate 3 linhas.";
+    }
+    if (stepKey === "forma_final") {
+      if (/versao|frase|sustenta|sintese/i.test(base)) return base;
+      return base + " Feche isso na versao mais nitida que voce sustentaria.";
+    }
     if (/objetiv|1-2 frases|1 frase|duas frases/i.test(base)) return base;
     if (isSocraticPrompt(base)) return base;
     return base + " " + pickVariedLine("track_intermediaria_suffix", [
@@ -1617,6 +1611,10 @@ function adaptRuleByTrack(text) {
     ]);
   }
   if (state.trackKey === "inspirada") {
+    if (stepKey === "centro") {
+      if (/1 frase|uma frase|centro/i.test(base)) return base;
+      return base + " Tente dizer isso em uma frase-eixo.";
+    }
     if (/fluxo|livre|imagem|cena/i.test(base)) return base;
     if (isSocraticPrompt(base)) return base;
     if (/\?$/.test(base) && base.length >= 42) return base;
@@ -1747,24 +1745,24 @@ function composeReply(p, userText, mirror, qText, minimalistNow, replyOptions = 
       ? ""
       : p.key === "B"
         ? pick([
-          `Tem algo de vivo em “${anchor}”.`,
-          `Parece que “${anchor}” está pedindo mais espaço no texto.`
+          `Tem algo de vivo em "${anchor}".`,
+          `Parece que "${anchor}" está pedindo mais espaço no texto.`
         ])
         : p.key === "A"
-          ? (Math.random() < 0.5 ? `Talvez o ponto mais nitido esteja em “${anchor}”.` : "")
+          ? (Math.random() < 0.5 ? `Talvez o ponto mais nitido esteja em "${anchor}".` : "")
           : p.key === "H" && state.presenceMix && (state.presenceMix.B || 0) > 0.32
             ? pick([
-              `Tem uma pista importante em “${anchor}”.`,
-              `Acho que “${anchor}” merece mais escuta.`
+              `Tem uma pista importante em "${anchor}".`,
+              `Acho que "${anchor}" merece mais escuta.`
             ])
             : "";
 
   if (options.standalone) {
-    return safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, pode continuar?`;
+    return safeQuestion || `Falando em "${fallbackUserAnchor(userText)}", pode continuar?`;
   }
 
   if (minimalistNow || p.key === "D") {
-    return safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, pode continuar?`;
+    return safeQuestion || `Falando em "${fallbackUserAnchor(userText)}", pode continuar?`;
   }
 
   const parts = [];
@@ -1787,7 +1785,7 @@ function composeReply(p, userText, mirror, qText, minimalistNow, replyOptions = 
     }
   }
 
-  parts.push(safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, o que aparece agora?`);
+  parts.push(safeQuestion || `Falando em "${fallbackUserAnchor(userText)}", o que aparece agora?`);
 
   if (!options.suppressClosing && closing && !(p.key === "B" && Math.random() < 0.55)) {
     parts.push(closing);
@@ -1835,7 +1833,7 @@ function askSevenWordsPrompt(userText) {
           ct === "afirmacao" ? "Tente em 7 palavras: que prova sustenta isso?" :
             "Tente em 7 palavras com lugar ou gesto: o que você quer dizer?";
 
-  const hook = userText ? `Você disse: “${swapPronouns(userText)}—”. ` : "";
+  const hook = userText ? `Você disse: "${swapPronouns(userText)}—". ` : "";
   return hook + base;
 }
 
@@ -1919,7 +1917,7 @@ function izaReply(userText) {
     }
   }
 
-  const fallbackQ = `Falando em “${fallbackUserAnchor(t)}”, o que aqui pede um nome mais preciso?`;
+  const fallbackQ = `Falando em "${fallbackUserAnchor(t)}", o que aqui pede um nome mais preciso?`;
   return presenceWrap(p, composeReply(p, t, shortMirror(p, t), fallbackQ, false));
 }
 
@@ -1929,15 +1927,15 @@ function centerChoicePrompt(fragment) {
   const frag = swapPronouns((fragment || "").trim());
 
   if (p.key === "D") {
-    return `“${frag}—”\nIsso está mais perto de pergunta, afirmação, ferida ou desejo?\nSe preferir, escreva do seu jeito.`;
+    return `"${frag}—"\nIsso está mais perto de pergunta, afirmação, ferida ou desejo?\nSe preferir, escreva do seu jeito.`;
   }
   if (p.key === "C") {
-    return `Você disse: “${frag}—”. Classifique o núcleo com precisão: pergunta, afirmação, ferida ou desejo.\nSe preferir, escreva do seu jeito.`;
+    return `Você disse: "${frag}—". Classifique o núcleo com precisão: pergunta, afirmação, ferida ou desejo.\nSe preferir, escreva do seu jeito.`;
   }
   if (p.key === "B") {
-    return `Ao ler “${frag}—”, eu sinto um núcleo aí.\nIsso está mais perto de uma pergunta, uma afirmação, uma ferida ou um desejo?\nSe preferir, escreva do seu jeito.`;
+    return `Ao ler "${frag}—", eu sinto um núcleo aí.\nIsso está mais perto de uma pergunta, uma afirmação, uma ferida ou um desejo?\nSe preferir, escreva do seu jeito.`;
   }
-  return `Quando você diz “${frag}—”, isso está mais perto de uma pergunta, uma afirmação, uma ferida ou um desejo?\nSe preferir, escreva do seu jeito.`;
+  return `Quando você diz "${frag}—", isso está mais perto de uma pergunta, uma afirmação, uma ferida ou um desejo?\nSe preferir, escreva do seu jeito.`;
 }
 
 function interpretCenterChoice(text) {
@@ -1966,6 +1964,176 @@ function interpretCenterChoice(text) {
     desejo: "um desejo"
   };
   return { type: choice, label: labelMap[choice] || "o seu próprio modo de dizer" };
+}
+
+function parseCenterChoice(text) {
+  const base = interpretCenterChoice(text);
+  const raw = String(text || "").trim();
+  const labelMap = {
+    pergunta: "uma pergunta",
+    afirmacao: "uma afirmacao",
+    ferida: "uma ferida",
+    desejo: "um desejo",
+    livre: "o seu proprio modo de dizer"
+  };
+  const patternsByChoice = {
+    pergunta: [/^\s*a\s*[-:.,;)]*\s*/i, /^\s*(?:uma?\s+)?pergunta\b\s*[-:.,;)]*\s*/i],
+    afirmacao: [/^\s*b\s*[-:.,;)]*\s*/i, /^\s*(?:uma?\s+)?afirmac[a-z]*\b\s*[-:.,;)]*\s*/i],
+    ferida: [/^\s*c\s*[-:.,;)]*\s*/i, /^\s*(?:uma?\s+)?ferida\b\s*[-:.,;)]*\s*/i],
+    desejo: [/^\s*d\s*[-:.,;)]*\s*/i, /^\s*(?:um\s+|uma?\s+)?desej[a-z]*\b\s*[-:.,;)]*\s*/i]
+  };
+
+  let semanticTail = raw;
+  if (base.type && patternsByChoice[base.type]) {
+    semanticTail = patternsByChoice[base.type].reduce(
+      (acc, pattern) => acc.replace(pattern, ""),
+      semanticTail
+    );
+  }
+
+  semanticTail = semanticTail
+    .replace(/^\s*(?:e|eh|sao|mais perto de|parece)\s+/i, "")
+    .replace(/^[\s,.;:()\-]+/, "")
+    .trim();
+
+  return {
+    ...base,
+    label: labelMap[base.type] || labelMap.livre,
+    raw,
+    semanticTail: base.type === "livre" ? raw : semanticTail
+  };
+}
+
+function countMeaningfulWords(text) {
+  return normalizeInlineText(text).split(/\s+/).filter(Boolean).length;
+}
+
+function countTextLines(text) {
+  return String(text || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean).length;
+}
+
+function detectSceneSignals(text) {
+  const normalized = normalizeSearchText(text);
+  const raw = String(text || "");
+  const hasPlace = /\b(?:na|no|numa|num|em|entre|diante|sob|sobre|perto|longe|rua|casa|quarto|sala|cozinha|janela|porta|escola|cidade|bairro|praca|ponte|praia|rio|bar|mercado|onibus|hospital|trabalho|floresta|quintal|fazenda|igreja|corredor|mesa|amazonia|antartida)\b/.test(normalized);
+  const hasAgent = /\b(?:eu|voce|ele|ela|nos|alguem|ninguem|homem|mulher|menino|menina|mae|pai|filho|filha|amigo|amiga|professor|professora|pesquisador|pesquisadora|cientista|vizinho|vizinha|namorado|namorada|artista|medico|medica|agricultor|agricultora|corpo|rosto|mao|olhos)\b/.test(normalized) || /(?:^|\s)[A-Z][a-z]{2,}/.test(raw);
+  const hasGesture = /\b(?:olha|olhou|olhando|ve|viu|vendo|anda|andou|entrou|saiu|ficou|parou|segura|segurou|abre|abriu|fecha|fechou|disse|fala|falou|grita|gritou|cala|calou|respira|respirou|escreve|escreveu|le|leu|toca|tocou|encosta|encostou|corre|correu|senta|sentou|levanta|levantou|chora|chorou|ri|riu|corta|cortou|empurra|empurrou|puxa|puxou|atravessa|atravessou|espera|esperou|treme|tremendo|tremia)\b/.test(normalized);
+  const hasSpeech = /["""']/.test(raw) || /\b(?:disse|fala|falou|gritou|perguntou|respondeu)\b/.test(normalized);
+  return {
+    hasPlace,
+    hasAgent,
+    hasGesture,
+    hasSpeech,
+    wordCount: countMeaningfulWords(text),
+    score: [hasPlace, hasAgent, hasGesture].filter(Boolean).length
+  };
+}
+
+function detectContrastSignals(text) {
+  const normalized = normalizeSearchText(text);
+  return {
+    wordCount: countMeaningfulWords(text),
+    hasExplicitPair: /\b(?:x|vs|versus)\b/.test(normalized),
+    hasDualFrame: /\b(?:entre|de um lado|de outro|ao mesmo tempo|mas|contra|tensao|conflito)\b/.test(normalized)
+  };
+}
+
+function isCompactCenterLine(text) {
+  const words = countMeaningfulWords(text);
+  const lines = countTextLines(text);
+  return words >= 3 && words <= 28 && lines <= 2;
+}
+
+function isCompactSynthesisText(text) {
+  const words = countMeaningfulWords(text);
+  const lines = countTextLines(text);
+  return words >= 8 && words <= 60 && lines <= 3;
+}
+
+function isStrongFinalLine(text) {
+  const normalized = normalizeInlineText(text);
+  const words = countMeaningfulWords(normalized);
+  const lines = countTextLines(normalized);
+  const sentenceCount = normalized.split(/[.!?]+/).map((item) => item.trim()).filter(Boolean).length;
+  const opensDebate = /^(?:por que|porque|como|qual|quais|quando|sera|seria|o que|se )/i.test(normalized);
+  const hasHedging = /\b(?:acho|talvez|parece|quem sabe)\b/i.test(normalized) || /ainda estou pensando|explica melhor/i.test(normalized);
+  const weakAdverbs = (normalized.match(/\b(?:principalmente|certamente|sobretudo|geralmente)\b/gi) || []).length;
+  const genericWhoFrame = /^quem\b/i.test(normalized) && words >= 10;
+  return !!normalized && words >= 5 && words <= 30 && lines <= 2 && sentenceCount <= 2 && !opensDebate && !hasHedging && weakAdverbs < 2 && !genericWhoFrame && !/\?$/.test(normalized);
+}
+
+function validateStepInput(stepKey, text) {
+  const clean = normalizeInlineText(text);
+  if (!clean) return { ok: false, reason: "empty" };
+
+  if (stepKey === "centro") {
+    return isCompactCenterLine(clean)
+      ? { ok: true }
+      : { ok: false, reason: "center_compact" };
+  }
+
+  if (stepKey === "tipo_centro") {
+    const parsed = parseCenterChoice(text);
+    if (parsed.type !== "livre") return { ok: true, parsed };
+    return countMeaningfulWords(parsed.semanticTail || parsed.raw || clean) >= 3
+      ? { ok: true, parsed }
+      : { ok: false, reason: "center_name" };
+  }
+
+  if (stepKey === "cena" || stepKey === "concreto") {
+    const scene = detectSceneSignals(text);
+    const sceneOk = scene.wordCount >= 6 && (scene.score >= 2 || (scene.score >= 1 && scene.hasSpeech));
+    return sceneOk
+      ? { ok: true, scene }
+      : { ok: false, reason: "scene", scene };
+  }
+
+  if (stepKey === "contraste") {
+    const contrast = detectContrastSignals(text);
+    return (contrast.wordCount >= 4 && (contrast.hasExplicitPair || contrast.hasDualFrame))
+      ? { ok: true, contrast }
+      : { ok: false, reason: "contrast", contrast };
+  }
+
+  if (stepKey === "sintese") {
+    return isCompactSynthesisText(text)
+      ? { ok: true }
+      : { ok: false, reason: "synthesis" };
+  }
+
+  if (stepKey === "frase_final" || stepKey === "forma_final") {
+    return isStrongFinalLine(text)
+      ? { ok: true }
+      : { ok: false, reason: "final_line" };
+  }
+
+  return { ok: true };
+}
+
+function buildStepValidationReply(stepKey) {
+  const p = state.presence || PRESENCES.A;
+  const prefix =
+    p.key === "D" ? "" :
+      p.key === "C" ? "Ainda nao." :
+        p.key === "B" ? "Quero te acompanhar melhor aqui." :
+          "Vamos ajustar isso um pouco.";
+
+  const coreByStep = {
+    centro: "Condense isso em 1 frase-eixo.",
+    tipo_centro: "Se quiser, nomeie como pergunta, afirmacao, ferida ou desejo. Se nao, diga em poucas palavras como esse centro se apresenta.",
+    cena: "Ainda esta abstrato. Traga uma cena pequena: diga onde isso acontece, quem esta ali e qual gesto aparece.",
+    concreto: "Quero ver isso no mundo. Mostre uma cena, uma fala, um gesto ou um lugar.",
+    contraste: "Nomeie claramente as duas forcas em tensao. Ex.: medo x vontade.",
+    sintese: "Reuna isso em ate 3 linhas, sem abrir um novo debate.",
+    frase_final: "Isso ainda esta mais explicacao do que fecho. Tente uma unica frase que voce sustentaria no final.",
+    forma_final: "Feche em 1 frase ou 2 no maximo, na versao mais nitida que voce sustentaria."
+  };
+
+  const core = coreByStep[stepKey] || "Tente responder de forma mais nitida.";
+  return prefix ? `${prefix}\n\n${core}` : core;
 }
 
 function refinedCenterChoicePrompt(fragment) {
@@ -1999,6 +2167,7 @@ const TRACKS = {
         prompt: "Em 1 frase, qual é o centro disso?",
         onUser: (t) => {
           state.centerType = null;
+          state.centerSemanticTail = "";
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
           return refinedCenterChoicePrompt(frag);
         }
@@ -2007,8 +2176,9 @@ const TRACKS = {
         key: "tipo_centro",
         prompt: "Escolha um caminho ou nomeie com suas palavras.",
         onUser: (t) => {
-          const parsed = interpretCenterChoice(t);
+          const parsed = parseCenterChoice(t);
           state.centerType = parsed.type;
+          state.centerSemanticTail = parsed.semanticTail || "";
           const p = state.presence || PRESENCES.A;
           const lead =
             p.key === "D" ? `Ok: ${parsed.label}.` :
@@ -2061,6 +2231,7 @@ const TRACKS = {
         prompt: "Passo 2 — Centro\nDiga o centro disso em 1 frase.",
         onUser: (t) => {
           state.centerType = null;
+          state.centerSemanticTail = "";
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
           return refinedCenterChoicePrompt(frag);
         }
@@ -2069,8 +2240,9 @@ const TRACKS = {
         key: "tipo_centro",
         prompt: "Escolha um caminho ou formule do seu jeito.",
         onUser: (t) => {
-          const parsed = interpretCenterChoice(t);
+          const parsed = parseCenterChoice(t);
           state.centerType = parsed.type;
+          state.centerSemanticTail = parsed.semanticTail || "";
           const p = state.presence || PRESENCES.A;
           const lead =
             p.key === "D" ? `Ok: ${parsed.label}.` :
@@ -2125,6 +2297,7 @@ const TRACKS = {
         prompt: "Em 1 frase, qual é o centro disso?",
         onUser: (t) => {
           state.centerType = null;
+          state.centerSemanticTail = "";
           const frag = t.split(/\s+/).slice(0, 14).join(" ");
           return refinedCenterChoicePrompt(frag);
         }
@@ -2133,8 +2306,9 @@ const TRACKS = {
         key: "tipo_centro",
         prompt: "Escolha um caminho ou diga do seu jeito.",
         onUser: (t) => {
-          const parsed = interpretCenterChoice(t);
+          const parsed = parseCenterChoice(t);
           state.centerType = parsed.type;
+          state.centerSemanticTail = parsed.semanticTail || "";
           const p = state.presence || PRESENCES.A;
           const lead =
             p.key === "D" ? `Ok: ${parsed.label}.` :
@@ -2163,8 +2337,11 @@ function resetConversationRuntime() {
   state.inspiredRounds = 0;
   state.turns = [];
   state.centerType = null;
+  state.centerSemanticTail = "";
   state.finalDraft = "";
   state.finalClosure = null;
+  state.journeyRubric = null;
+  state.doneChecklist = null;
   state.sent = false;
 
   state.registerStatus = "idle";
@@ -2219,9 +2396,27 @@ function showStep() {
       return;
     }
 
-    pushTurn("user", userText);
+    const validation = validateStepInput(step.key, userText);
+    pushTurn("user", userText, {
+      stepKey: step.key,
+      validation: validation.ok ? "ok" : "repair_needed"
+    });
+
+    if (!validation.ok) {
+      const repairReply = buildStepValidationReply(step.key);
+      pushTurn("iza", repairReply, {
+        stepKey: step.key,
+        validation: "repair"
+      });
+      showIza(repairReply, () => showStep());
+      return;
+    }
+
     const reply = step.onUser(userText);
-    pushTurn("iza", reply);
+    pushTurn("iza", reply, {
+      stepKey: step.key,
+      validation: "accepted"
+    });
 
     showIza(reply, () => {
       if (step.endScreen) {
@@ -2353,7 +2548,7 @@ function showPrompt(title, question, cb) {
     }
   };
 
-  // salva o payload COMPLETO (não “capado”)
+  // salva o payload COMPLETO (não "capado")
   pushView({ type: "prompt", payload });
 
   renderPromptScreen(payload, false);
@@ -2412,7 +2607,11 @@ const JOURNEY_STOPWORDS = new Set([
   "ser", "seu", "seus", "sua", "suas", "tambem", "te", "tem", "tinha", "to", "tu", "um", "uma", "voce",
   "voces", "texto", "escrita", "coisa", "aqui", "agora", "hoje", "ontem", "amanha", "gente",
   "tipo", "sobre", "fazer", "feito", "tenho", "tava", "estou", "quero", "queria", "vai",
-  "vou", "fica", "ficou", "so", "mim", "meus", "minhas", "dele", "dela"
+  "vou", "fica", "ficou", "so", "mim", "meus", "minhas", "dele", "dela", "principalmente",
+  "certamente", "proprio", "propria", "proprios", "proprias", "jeito", "modo", "passo", "frase",
+  "linha", "linhas", "sintese", "versao", "forma", "registro", "trilha", "jornada", "nucleo",
+  "centro", "pergunta", "afirmacao", "ferida", "desejo", "questionamento", "resposta", "detalhe",
+  "detalhes", "coisas", "algo", "alguma", "algumas", "algum", "alguns", "melhor", "ainda"
 ]);
 
 function clipText(text, max = 160) {
@@ -2461,36 +2660,69 @@ function listToNaturalLanguage(items) {
   return `${values.slice(0, -1).join(", ")} e ${values[values.length - 1]}`;
 }
 
+function userTurnsWithMeta() {
+  return userTurnsOnly().map((turn) => ({ ...turn, meta: turn.meta || {} }));
+}
+
+function userTurnsByStepKeys(stepKeys) {
+  const wanted = Array.isArray(stepKeys) ? stepKeys : [stepKeys];
+  const lookup = new Set(wanted.filter(Boolean));
+  return userTurnsWithMeta().filter((turn) => lookup.has(turn.meta?.stepKey));
+}
+
+function scoreJourneyTurnWeight(turn, index, total) {
+  const stepKey = turn.meta?.stepKey || "";
+  let weight = 1.15;
+
+  if (turn.meta?.validation === "repair_needed") weight *= 0.35;
+  if (stepKey === "cena" || stepKey === "concreto") weight += 1.7;
+  else if (stepKey === "sintese") weight += 1.25;
+  else if (stepKey === "frase_final" || stepKey === "forma_final") weight += isStrongFinalLine(turn.text) ? 1.45 : 0.55;
+  else if (stepKey === "centro") weight += 0.9;
+  else if (stepKey === "atrito" || stepKey === "contraste") weight += 0.65;
+  else if (stepKey === "tipo_centro") weight *= 0.35;
+
+  if (index >= Math.max(0, total - 3)) weight += 0.35;
+  return Math.max(0.2, weight);
+}
+
+function resolveKeywordSources() {
+  const turns = userTurnsWithMeta();
+  const total = turns.length || 1;
+  const sources = turns
+    .map((turn, index) => ({
+      text: normalizeInlineText(turn.text),
+      weight: scoreJourneyTurnWeight(turn, index, total)
+    }))
+    .filter((entry) => entry.text);
+
+  if (state.centerSemanticTail) {
+    sources.push({ text: normalizeInlineText(state.centerSemanticTail), weight: 3.6 });
+  }
+
+  const finalAnchor = resolveFinalAnchorText();
+  if (finalAnchor) {
+    sources.push({
+      text: finalAnchor,
+      weight: isStrongFinalLine(finalAnchor) ? 3.3 : 2.2
+    });
+  }
+
+  const emergent = extractEmergentPhrase();
+  if (emergent) {
+    sources.push({ text: emergent, weight: 2.5 });
+  }
+
+  return sources;
+}
+
 function extractJourneyKeywords() {
   const counts = Object.create(null);
   const seenRoots = new Set();
-  const userTexts = userTurnsOnly().map((t) => normalizeInlineText(t.text)).filter(Boolean);
-  const weightedSources = [
-    { text: state.finalDraft || "", weight: 4 },
-    { text: extractEmergentPhrase(), weight: 3 },
-    { text: userTexts.slice(-Math.min(6, userTexts.length)).join(" "), weight: state.trackKey === "inspirada" ? 3 : 2 },
-    {
-      text: userTexts.slice(Math.max(0, Math.floor(userTexts.length / 2) - 2), Math.max(0, Math.floor(userTexts.length / 2) - 2) + 4).join(" "),
-      weight: 2.4
-    },
-    { text: userTexts.join(" "), weight: 2 },
-    { text: userTexts.slice(0, Math.min(3, userTexts.length)).join(" "), weight: 1.5 }
-  ];
 
-  weightedSources.forEach(({ text, weight }) => {
+  resolveKeywordSources().forEach(({ text, weight }) => {
     tokenizeForKeywords(text).forEach((token) => {
       counts[token] = (counts[token] || 0) + scoreKeywordToken(token, weight);
-    });
-  });
-
-  if (state.centerType && !["", "livre"].includes(state.centerType)) {
-    counts[state.centerType] = (counts[state.centerType] || 0) + 2;
-  }
-
-  userTexts.forEach((text, index) => {
-    const emphasisWeight = index >= userTexts.length - 4 ? 1.25 : 0.7;
-    tokenizeForKeywords(text).forEach((token) => {
-      counts[token] = (counts[token] || 0) + scoreKeywordToken(token, emphasisWeight);
     });
   });
 
@@ -2510,22 +2742,24 @@ function buildJourneySynthesis(summary, keywords) {
   const trackName = (TRACKS[state.trackKey]?.name || "jornada").replace(/\s*\([^)]*\)\s*/g, "").trim();
   const focus = listToNaturalLanguage((keywords || []).slice(0, 3));
   const centerMap = {
-    pergunta: "uma pergunta que pedia desdobramento",
-    afirmacao: "uma afirmação que precisava de sustento",
+    pergunta: "uma pergunta que pediu desdobramento",
+    afirmacao: "uma afirmacao que pediu sustento",
     ferida: "uma ferida que pediu nome e contorno",
     desejo: "um desejo que buscou forma",
-    livre: "um núcleo ainda aberto"
+    livre: "um nucleo ainda aberto"
   };
 
   const lines = [];
   lines.push(
     focus
       ? `Na ${trackName.toLowerCase()}, seu texto foi abrindo caminho em torno de ${focus}.`
-      : `Na ${trackName.toLowerCase()}, seu texto foi abrindo caminho e encontrando um eixo próprio.`
+      : `Na ${trackName.toLowerCase()}, seu texto foi encontrando um eixo proprio.`
   );
 
-  if (state.centerType) {
-    lines.push(`No percurso, apareceu ${centerMap[state.centerType] || "um núcleo que foi se revelando melhor"}.`);
+  if (state.centerSemanticTail) {
+    lines.push(`Desde cedo, ficou marcado este recorte: "${clipText(state.centerSemanticTail, 110)}".`);
+  } else if (state.centerType) {
+    lines.push(`No percurso, apareceu ${centerMap[state.centerType] || "um nucleo que foi se revelando melhor"}.`);
   } else if (
     summary.firstText &&
     summary.lastText &&
@@ -2539,11 +2773,143 @@ function buildJourneySynthesis(summary, keywords) {
   if (summary.emergentPhrase) {
     lines.push(`Ficou ecoando esta linha: "${clipText(summary.emergentPhrase, 120)}".`);
   } else if (summary.lastText) {
-    lines.push(`No fim, ficou mais visível isto: "${clipText(summary.lastText, 120)}".`);
+    lines.push(`No fim, ficou mais visivel isto: "${clipText(summary.lastText, 120)}".`);
   }
 
   const synthesis = lines.join(" ").replace(/\s+/g, " ").trim();
   return synthesis.length > 420 ? synthesis.slice(0, 417).trim() + "..." : synthesis;
+}
+
+function collectSemanticAnchorTokens() {
+  const tokens = [];
+  const pushTokens = (text) => {
+    tokenizeForKeywords(text).forEach((token) => tokens.push(token));
+  };
+
+  pushTokens(state.centerSemanticTail || "");
+  pushTokens(resolveFinalAnchorText() || "");
+
+  userTurnsByStepKeys(["centro", "atrito", "cena", "concreto", "sintese", "frase_final", "forma_final"])
+    .filter((turn) => turn.meta?.validation !== "repair_needed")
+    .forEach((turn) => pushTokens(turn.text));
+
+  return Array.from(new Set(tokens));
+}
+
+function keywordOverlapCount(text, referenceTokens) {
+  const lookup = new Set(Array.isArray(referenceTokens) ? referenceTokens : tokenizeForKeywords(referenceTokens));
+  if (!lookup.size) return 0;
+
+  const seen = new Set();
+  return tokenizeForKeywords(text).filter((token) => {
+    if (seen.has(token)) return false;
+    seen.add(token);
+    return lookup.has(token);
+  }).length;
+}
+
+function lexicalDensity(text) {
+  const words = countMeaningfulWords(text);
+  if (!words) return 0;
+  return tokenizeForKeywords(text).length / words;
+}
+
+function buildJourneyRubric(summary) {
+  const anchors = collectSemanticAnchorTokens();
+  const sceneScores = userTurnsByStepKeys(["cena", "concreto"]).map((turn) => detectSceneSignals(turn.text).score);
+  const bestSceneScore = sceneScores.length ? Math.max(...sceneScores) : 0;
+  const repairCount = userTurnsWithMeta().filter((turn) => turn.meta?.validation === "repair_needed").length;
+  const summaryText = [summary.journeySynthesis || "", (summary.keywords || []).join(" "), summary.lastText || ""].join(" ");
+  const semanticOverlap = keywordOverlapCount(summaryText, anchors);
+  const socraticCount = (state.turns || []).filter((turn) => turn.role === "iza" && isSocraticPrompt(turn.text)).length;
+  const mirrorCount = (state.turns || []).filter((turn) => turn.role === "iza" && isMirrorishText(turn.text)).length;
+  const lastIza = recentIzaTexts(1)[0] || "";
+  const closingWords = countMeaningfulWords(lastIza);
+  const closingLines = countTextLines(lastIza);
+
+  const items = {
+    fidelidadeAoPasso: {
+      score: repairCount === 0 ? 2 : repairCount <= 2 ? 1 : 0,
+      max: 2,
+      note: repairCount === 0 ? "A trilha avancou sem pular tarefa." : repairCount <= 2 ? "Houve alguns reparos de passo." : "A conversa ainda precisou de muitos reparos para se manter na trilha."
+    },
+    concretude: {
+      score: bestSceneScore >= 3 ? 2 : bestSceneScore >= 2 ? 1 : 0,
+      max: 2,
+      note: bestSceneScore >= 3 ? "A conversa chegou a cena concreta." : bestSceneScore >= 2 ? "Ha algum lastro concreto, mas ainda pode fechar melhor." : "Ainda falta corpo concreto na cena."
+    },
+    retencaoSemantica: {
+      score: semanticOverlap >= 3 ? 2 : semanticOverlap >= 1 ? 1 : 0,
+      max: 2,
+      note: semanticOverlap >= 3 ? "A sintese reteve os eixos semanticos centrais." : semanticOverlap >= 1 ? "Parte do campo semantico foi preservada." : "A sintese ainda se afasta demais do vocabulario vivo do usuario."
+    },
+    qualidadeDaPergunta: {
+      score: socraticCount >= 2 && mirrorCount <= 1 ? 2 : socraticCount >= 1 ? 1 : 0,
+      max: 2,
+      note: socraticCount >= 2 && mirrorCount <= 1 ? "As perguntas socraticas puxaram a conversa sem repetir demais." : socraticCount >= 1 ? "Ha boas perguntas, mas o encadeamento ainda pode ficar mais firme." : "A conversa ainda pergunta pouco ou pergunta de modo pouco distintivo."
+    },
+    qualidadeDoFechamento: {
+      score: closingWords > 0 && closingWords <= 24 && closingLines <= 2 ? 2 : closingWords <= 40 && closingLines <= 3 ? 1 : 0,
+      max: 2,
+      note: closingWords > 0 && closingWords <= 24 && closingLines <= 2 ? "O fechamento foi enxuto e orientado." : closingWords <= 40 && closingLines <= 3 ? "O fechamento funciona, mas ainda carrega instrucao demais." : "O fechamento ainda dispersa em vez de fechar."
+    },
+    qualidadeDaSinteseFinal: {
+      score: (summary.keywords || []).length >= 3 && semanticOverlap >= 3 ? 2 : (summary.keywords || []).length >= 2 && semanticOverlap >= 1 ? 1 : 0,
+      max: 2,
+      note: (summary.keywords || []).length >= 3 && semanticOverlap >= 3 ? "A sintese final esta ancorada no tema real do texto." : (summary.keywords || []).length >= 2 && semanticOverlap >= 1 ? "A sintese final ja indica o tema, mas ainda pode ficar mais fiel." : "A sintese final ainda esta vulneravel a residuos de formulacao."
+    }
+  };
+
+  const total = Object.values(items).reduce((sum, item) => sum + item.score, 0);
+  return {
+    total,
+    max: Object.values(items).reduce((sum, item) => sum + item.max, 0),
+    items
+  };
+}
+
+function buildDoneChecklist(summary, rubric) {
+  const finalText = resolveFinalAnchorText() || summary.lastText || "";
+  const priorText = userTurnsWithMeta()
+    .filter((turn) => !["frase_final", "forma_final"].includes(turn.meta?.stepKey))
+    .slice(-1)[0]?.text || "";
+  const finalDensity = lexicalDensity(finalText);
+  const priorDensity = lexicalDensity(priorText);
+
+  return {
+    fraseFinalMaisForte: {
+      ok: isStrongFinalLine(finalText) && (!priorText || finalDensity >= Math.max(0, priorDensity - 0.02)),
+      note: isStrongFinalLine(finalText)
+        ? "O fechamento esta compacto o bastante para funcionar como frase que fica."
+        : "A linha final ainda pede mais lapidacao para ficar mais forte que a resposta espontanea anterior."
+    },
+    naoAbandonouPasso: {
+      ok: rubric.items.fidelidadeAoPasso.score >= 2 && (state.trackKey !== "iniciante" || rubric.items.concretude.score >= 1),
+      note: rubric.items.fidelidadeAoPasso.score >= 2
+        ? "A conversa conseguiu ficar dentro da tarefa de cada passo."
+        : "Ainda houve momentos em que a conversa saiu do objetivo do passo."
+    },
+    sinteseRefleteTema: {
+      ok: rubric.items.retencaoSemantica.score >= 1 && rubric.items.qualidadeDaSinteseFinal.score >= 1,
+      note: rubric.items.retencaoSemantica.score >= 1 && rubric.items.qualidadeDaSinteseFinal.score >= 1
+        ? "A sintese final esta razoavelmente ancorada nos temas reais do texto."
+        : "A sintese final ainda precisa se prender mais ao tema real e menos ao residuo metadiscursivo."
+    }
+  };
+}
+
+function formatRubricForTranscript(rubric) {
+  if (!rubric?.items) return "";
+  return Object.entries(rubric.items)
+    .map(([key, item]) => `- ${key}: ${item.score}/${item.max} - ${item.note}`)
+    .join("\n");
+}
+
+function formatDoneChecklistForTranscript(doneChecklist) {
+  if (!doneChecklist) return "";
+  return Object.entries(doneChecklist)
+    .map(([key, item]) => `- ${key}: ${item.ok ? "SIM" : "NAO"} - ${item.note}`)
+    .join("\n");
 }
 
 function buildFallbackLiteraryGift(keywords) {
@@ -2608,17 +2974,44 @@ function renderGiftLead(source) {
   return "Nem sempre a trilha termina onde acaba. Às vezes ela ecoa em outro verso.";
 }
 
-function extractEmergentPhrase() {
-  const source =
-    normalizeInlineText(state.finalDraft) ||
-    normalizeInlineText(userTurnsOnly().slice(-1)[0]?.text) ||
-    normalizeInlineText(userTurnsOnly()[0]?.text);
+function resolveFinalAnchorText() {
+  const finalTurns = userTurnsByStepKeys(["frase_final", "forma_final"])
+    .map((turn) => normalizeInlineText(turn.text))
+    .filter(Boolean);
+  const validatedFinal = finalTurns.find((text) => isStrongFinalLine(text));
+  if (validatedFinal) return validatedFinal;
 
+  const draft = normalizeInlineText(state.finalDraft);
+  if (isStrongFinalLine(draft)) return draft;
+
+  const synthesisTurn = userTurnsByStepKeys(["sintese"])
+    .map((turn) => normalizeInlineText(turn.text))
+    .filter(Boolean)
+    .slice(-1)[0];
+  if (synthesisTurn) return synthesisTurn;
+
+  const centerTail = normalizeInlineText(state.centerSemanticTail);
+  if (centerTail) return centerTail;
+
+  const concreteTurn = userTurnsByStepKeys(["cena", "concreto"])
+    .map((turn) => normalizeInlineText(turn.text))
+    .filter(Boolean)
+    .slice(-1)[0];
+  if (concreteTurn) return concreteTurn;
+
+  return (
+    normalizeInlineText(userTurnsOnly().slice(-1)[0]?.text) ||
+    normalizeInlineText(userTurnsOnly()[0]?.text)
+  );
+}
+
+function extractEmergentPhrase() {
+  const source = resolveFinalAnchorText();
   if (!source) return "";
 
   const sentences = source.match(/[^.!?]+[.!?]?/g) || [source];
   const best =
-    sentences.map((s) => normalizeInlineText(s)).find((s) => s.length >= 24) ||
+    sentences.map((sentence) => normalizeInlineText(sentence)).find((sentence) => sentence.length >= 24) ||
     normalizeInlineText(sentences[0]);
 
   return best.length > 180 ? best.slice(0, 177).trim() + "..." : best;
@@ -2628,16 +3021,27 @@ function buildFinalSummary() {
   const userTurns = userTurnsOnly();
   const base = {
     firstText: normalizeInlineText(userTurns[0]?.text),
-    lastText:
-      normalizeInlineText(state.finalDraft) ||
-      normalizeInlineText(userTurns.slice(-1)[0]?.text),
-    emergentPhrase: extractEmergentPhrase()
+    lastText: resolveFinalAnchorText(),
+    emergentPhrase: extractEmergentPhrase(),
+    centerSemanticTail: normalizeInlineText(state.centerSemanticTail)
   };
   const keywords = extractJourneyKeywords();
-  return {
+  const journeySynthesis = buildJourneySynthesis(base, keywords);
+  const summary = {
     ...base,
     keywords,
-    journeySynthesis: buildJourneySynthesis(base, keywords)
+    journeySynthesis
+  };
+  const rubric = buildJourneyRubric(summary);
+  const doneChecklist = buildDoneChecklist(summary, rubric);
+
+  state.journeyRubric = rubric;
+  state.doneChecklist = doneChecklist;
+
+  return {
+    ...summary,
+    rubric,
+    doneChecklist
   };
 }
 
@@ -2651,17 +3055,25 @@ function buildFinalRecordTranscript(payload) {
   const parts = [payload.baseTranscript || buildTranscript() + buildFinalDraftBlock()];
 
   if (payload.journeySynthesis) {
-    parts.push(`\n---\nSÍNTESE DA JORNADA:\n${payload.journeySynthesis}\n`);
+    parts.push(`\n---\nSINTESE DA JORNADA:\n${payload.journeySynthesis}\n`);
   }
 
   if (payload.keywords?.length) {
     parts.push(`\nPALAVRAS-CHAVE:\n${payload.keywords.join(", ")}\n`);
   }
 
+  if (payload.rubric?.items) {
+    parts.push(`\nRUBRICA DE TESTE:\n${formatRubricForTranscript(payload.rubric)}\n`);
+  }
+
+  if (payload.doneChecklist) {
+    parts.push(`\nDEFINICAO DE PRONTO:\n${formatDoneChecklistForTranscript(payload.doneChecklist)}\n`);
+  }
+
   if (payload.literaryGift?.fragment) {
     parts.push(
-      `\nPRESENTE LITERÁRIO DA IZA:\n${payload.literaryGift.intro ? payload.literaryGift.intro + "\n\n" : ""}${payload.literaryGift.fragment}\n` +
-      `Crédito: ${payload.literaryGift.author || "IZA"} - ${payload.literaryGift.title || "Presente"}\n`
+      `\nPRESENTE LITERARIO DA IZA:\n${payload.literaryGift.intro ? payload.literaryGift.intro + "\n\n" : ""}${payload.literaryGift.fragment}\n` +
+      `Credito: ${payload.literaryGift.author || "IZA"} - ${payload.literaryGift.title || "Presente"}\n`
     );
   }
 
@@ -2735,6 +3147,7 @@ function buildGiftJourneyContext(payload) {
   const middleStart = Math.max(0, Math.floor(userTexts.length / 2) - 2);
   const sections = [
     state.finalDraft || "",
+    state.centerSemanticTail || "",
     payload.emergentPhrase || "",
     userTexts.slice(0, Math.min(3, userTexts.length)).join(" || "),
     userTexts.slice(middleStart, middleStart + 4).join(" || "),
@@ -3074,13 +3487,16 @@ async function safeRegisterFinal(finalPayload) {
     endedAtISO: nowISO(),
     page: state.pageURL,
     finalDraft: state.finalDraft || "",
+    centerSemanticTail: state.centerSemanticTail || "",
     journeySummary: finalPayload?.journeySynthesis || "",
     summary: finalPayload?.journeySynthesis || "",
     keywords: finalPayload?.keywords || [],
     keywordText: (finalPayload?.keywords || []).join(", "),
     escritos: finalPayload?.transcript || buildTranscript() + buildFinalDraftBlock(),
     transcript: finalPayload?.transcript || buildTranscript() + buildFinalDraftBlock(),
-    turns: state.turns
+    turns: state.turns,
+    journeyRubric: finalPayload?.rubric || null,
+    doneChecklist: finalPayload?.doneChecklist || null
   };
 
   try {
