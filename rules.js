@@ -7,6 +7,155 @@
 (function () {
   const RULES_BASE = [
     {
+      name: "generalizacao_grupo",
+      pattern: /\b(?:homens?|mulheres?|pessoas?|men|women|people)\b[\s\S]{0,40}\b(?:s[aã]o|are)\b[\s\S]{0,30}\b(?:todos?\s+iguais|iguais|all alike|the same)\b/i,
+      responses: [
+        "Em que sentido?",
+        "De que maneira?"
+      ],
+      responseMode: "direct",
+      priority: 3.4
+    },
+    {
+      name: "exemplo_especifico",
+      pattern: /\b(?:sempre|always)\b[\s\S]{0,80}\b(?:alguma\s+coisa|algo|something|coisa)\b/i,
+      responses: [
+        "Voce consegue pensar em um exemplo especifico?",
+        "Que exemplo concreto vem a sua mente?"
+      ],
+      responseMode: "direct",
+      priority: 3.1
+    },
+    {
+      name: "parceiro_trouxe_aqui",
+      pattern: /\b(?:meu|minha|my)\s+(namorad[oa]|companheir[oa]|boyfriend|girlfriend)\b[\s\S]{0,40}\b(?:me\s+fez|me\s+mandou|me\s+trouxe|made me|brought me|made me come)\b[\s\S]{0,20}\b(?:vir|aqui|here)?/i,
+      responses: [
+        "Essa pessoa fez voce vir aqui?",
+        "Seu companheiro fez voce vir aqui?"
+      ],
+      memory: [
+        "Essa relacao parece importante. O que mais ela move em voce?"
+      ],
+      responseMode: "direct",
+      priority: 3.15
+    },
+    {
+      name: "estado_depressivo",
+      pattern: /\b(deprimid[oa]|depressed|trist[ea]|unhappy|infeliz)\b(?:[\s\S]{0,24}\b(?:boa\s+parte\s+do\s+tempo|much\s+of\s+the\s+time|o\s+tempo\s+todo)\b)?/i,
+      responses: [
+        "Sinto muito em saber disso.",
+        "Voce acha que vir aqui pode ajudar voce a se sentir diferente?"
+      ],
+      responseMode: "direct",
+      priority: 2.85
+    },
+    {
+      name: "pedido_ajuda",
+      pattern: /\b(?:preciso|need)\b[\s\S]{0,20}\b(?:ajuda|help)\b/i,
+      responses: [
+        "O que significaria para voce conseguir alguma ajuda?",
+        "Se voce recebesse ajuda, o que mudaria primeiro?"
+      ],
+      memory: [
+        "Como seria, para voce, ter ajuda de um jeito que realmente importasse?"
+      ],
+      responseMode: "direct",
+      priority: 3.05
+    },
+    {
+      name: "familia_geral",
+      pattern: /\b(?:fam[ií]lia|family)\b/i,
+      responses: [
+        "Fale mais sobre a sua familia.",
+        "Quem na sua familia parece mais presente nisso?"
+      ],
+      memory: [
+        "Quem mais, na sua familia, aparece quando voce pensa nisso?"
+      ],
+      responseMode: "direct",
+      priority: 2.95
+    },
+    {
+      name: "parentesco_geral",
+      pattern: /\b(?:m[aã]e|pai|mother|father|irma[oa]|brother|sister)\b/i,
+      responses: [
+        "Fale mais sobre a sua familia.",
+        "Quem mais da sua familia entra nisso?"
+      ],
+      responseMode: "direct",
+      priority: 2.7
+    },
+    {
+      name: "mae_cuida",
+      pattern: /\b(?:minha|my)\s+(?:m[aã]e|mother)\b[\s\S]{0,40}\b(?:cuida|toma\s+conta|takes\s+care)\b[\s\S]{0,20}\b(?:de\s+mim|de\s+me|of\s+me|me)\b/i,
+      responses: [
+        "Quem mais na sua familia cuida de voce?"
+      ],
+      memory: [
+        "Fale mais sobre a sua familia."
+      ],
+      responseMode: "direct",
+      priority: 3.2
+    },
+    {
+      name: "pai_curto",
+      pattern: /^(?:meu|minha|my)?\s*(pai|father)\.?$/i,
+      responses: [
+        "Seu pai?"
+      ],
+      responseMode: "direct",
+      priority: 3.35
+    },
+    {
+      name: "comparacao_com_pai",
+      pattern: /\b(?:voc[eê]|iza|you)\b[\s\S]{0,30}\b(?:como|igual|parece|like)\b[\s\S]{0,20}\b(?:meu|minha|my)\s+(pai|m[aã]e|father|mother)\b/i,
+      responses: [
+        "Que semelhanca voce percebe?",
+        "O que em mim lembra essa figura para voce?"
+      ],
+      responseMode: "direct",
+      priority: 3.25
+    },
+    {
+      name: "iza_nao_agressiva",
+      pattern: /\b(?:voc[eê]|iza|you)\b[\s\S]{0,20}\b(?:n[aã]o|not)\b[\s\S]{0,30}\b(?:agressiv[oa]|aggressive)\b/i,
+      responses: [
+        "O que faz voce pensar que eu nao sou agressiva?",
+        "O que em mim te da essa impressao?"
+      ],
+      responseMode: "direct",
+      priority: 3.1
+    },
+    {
+      name: "iza_nao_discute",
+      pattern: /\b(?:voc[eê]|iza|you)\b[\s\S]{0,20}\b(?:n[aã]o|not|don't|do\s+not)\b[\s\S]{0,28}\b(?:discute|argumenta|argue)\b[\s\S]{0,20}\b(?:comigo|with\s+me)?/i,
+      responses: [
+        "Por que voce acha que eu nao discuto com voce?",
+        "O que te faz notar isso agora?"
+      ],
+      responseMode: "direct",
+      priority: 3.2
+    },
+    {
+      name: "iza_com_medo",
+      pattern: /\b(?:voc[eê]|iza|you)\b[\s\S]{0,16}\b(?:tem\s+medo|est[aá]\s+com\s+medo|is\s+afraid|afraid)\b[\s\S]{0,16}\b(?:de\s+mim|of\s+me)\b/i,
+      responses: [
+        "Te agrada pensar que eu tenho medo de voce?",
+        "O que isso significaria para voce?"
+      ],
+      responseMode: "direct",
+      priority: 3.25
+    },
+    {
+      name: "pai_com_medo",
+      pattern: /\b(?:meu|minha|my)\s+(pai|father)\b[\s\S]{0,30}\b(?:tem\s+medo|is\s+afraid|afraid)\b/i,
+      responses: [
+        "O que mais vem a sua mente quando voce pensa no seu pai?"
+      ],
+      responseMode: "direct",
+      priority: 3.05
+    },
+    {
       name: "nao_consigo",
       pattern: /\bn[aã]o\s+consigo\s+([^.!?\n\r]+)/i,
       responses: [
