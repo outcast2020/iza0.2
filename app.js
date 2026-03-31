@@ -131,6 +131,7 @@ function loadAndResumeSession() {
   if (saved.IZA_ENGINE) {
     IZA_ENGINE.memory = saved.IZA_ENGINE.memory || [];
     IZA_ENGINE.usedRecently = saved.IZA_ENGINE.usedRecently || [];
+    IZA_ENGINE.lastRuleName = saved.IZA_ENGINE.lastRuleName || "";
   }
 
   // Restore the UI using the view history
@@ -579,7 +580,7 @@ function presenceWrap(p, coreText) {
 }
 
 // -------------------- ELIZA ENGINE --------------------
-const IZA_ENGINE = { memory: [], usedRecently: [] };
+const IZA_ENGINE = { memory: [], usedRecently: [], lastRuleName: "" };
 
 const pronounPairs = [
   [/\beu\b/gi, "você"],
@@ -849,6 +850,70 @@ function pickRuleResponse(responses) {
   return chosen;
 }
 
+function normalizeRuleReplyOptions(rule) {
+  const mode = String(rule?.responseMode || "").toLowerCase();
+  const base = {
+    standalone: false,
+    suppressMirror: false,
+    suppressLead: false,
+    suppressBridge: false,
+    suppressClosing: false,
+    skipPresenceWrap: false,
+    skipToneAdaptation: false
+  };
+
+  if (mode === "direct" || mode === "classic" || mode === "standalone") {
+    return {
+      ...base,
+      standalone: true,
+      suppressMirror: true,
+      suppressLead: true,
+      suppressBridge: true,
+      suppressClosing: true,
+      skipPresenceWrap: true,
+      skipToneAdaptation: true
+    };
+  }
+
+  if (mode === "lean") {
+    return {
+      ...base,
+      suppressLead: true,
+      suppressBridge: true,
+      suppressClosing: true
+    };
+  }
+
+  return {
+    ...base,
+    standalone: !!rule?.standalone,
+    suppressMirror: !!rule?.suppressMirror,
+    suppressLead: !!rule?.suppressLead,
+    suppressBridge: !!rule?.suppressBridge,
+    suppressClosing: !!rule?.suppressClosing,
+    skipPresenceWrap: !!rule?.skipPresenceWrap,
+    skipToneAdaptation: !!rule?.skipToneAdaptation
+  };
+}
+
+function queueRuleMemory(rule, match, userText) {
+  const pool = Array.isArray(rule?.memory) ? rule.memory.filter(Boolean) : [];
+  if (!pool.length) return;
+
+  const raw = pick(pool);
+  if (!raw) return;
+
+  const rendered = ensureMeaningfulTemplateText(
+    interpolateRuleTemplate(raw, match, userText),
+    userText
+  );
+  if (!rendered) return;
+
+  IZA_ENGINE.memory = [rendered]
+    .concat((IZA_ENGINE.memory || []).filter((item) => item !== rendered))
+    .slice(0, 8);
+}
+
 function shouldBeMinimalNow(p, mix) {
   return (
     p.key === "D" ||
@@ -977,25 +1042,28 @@ function getRuleWeight(ruleName, p, mix, trackKey) {
 function pickWeightedRule(candidates, p, mix) {
   const weighted = candidates
     .map((item) => {
-      const w = getRuleWeight(item.rule?.name, p, mix, state.trackKey);
+      const priority = Math.max(0.05, Number(item.rule?.priority || 1));
+      const fallbackPenalty =
+        item.rule?.name === "default" && candidates.length > 1 ? 0.08 : 1;
+      const w =
+        getRuleWeight(item.rule?.name, p, mix, state.trackKey) *
+        priority *
+        fallbackPenalty;
       return { ...item, weight: w };
     })
     .filter((item) => item.weight > 0);
 
   if (!weighted.length) return null;
 
-  const total = weighted.reduce((acc, item) => acc + item.weight, 0);
-  let r = Math.random() * total;
-  for (const item of weighted) {
-    r -= item.weight;
-    if (r <= 0) return item;
-  }
-  return weighted[weighted.length - 1];
+  const sorted = weighted.sort((a, b) => b.weight - a.weight);
+  const topWeight = sorted[0].weight;
+  const finalists = sorted.filter((item) => item.weight >= topWeight * 0.92);
+  return pick(finalists);
 }
 
 function runExternalRules(userText, p, mix) {
   const externalRules = getExternalRulesForPresence(p, mix);
-  if (!externalRules.length) return "";
+  if (!externalRules.length) return null;
 
   const candidates = [];
   for (const rule of externalRules) {
@@ -1006,15 +1074,29 @@ function runExternalRules(userText, p, mix) {
   }
 
   const chosen = pickWeightedRule(candidates, p, mix);
-  if (!chosen) return "";
+  if (!chosen) return null;
 
   const raw = pickRuleResponse(chosen.rule.responses);
-  if (!raw) return "";
+  if (!raw) return null;
 
+  const replyOptions = normalizeRuleReplyOptions(chosen.rule);
   let qText = interpolateRuleTemplate(raw, chosen.match, userText);
-  qText = adaptRuleByTrack(qText);
-  qText = adaptRuleByPresence(qText, p, mix);
-  return ensureMeaningfulTemplateText(qText, userText);
+  if (!replyOptions.skipToneAdaptation) {
+    qText = adaptRuleByTrack(qText);
+    qText = adaptRuleByPresence(qText, p, mix);
+  }
+
+  qText = ensureMeaningfulTemplateText(qText, userText);
+  if (!qText) return null;
+
+  queueRuleMemory(chosen.rule, chosen.match, userText);
+  IZA_ENGINE.lastRuleName = chosen.rule?.name || "";
+
+  return {
+    text: qText,
+    options: replyOptions,
+    ruleName: chosen.rule?.name || ""
+  };
 }
 
 // -------------------- 12 RULES --------------------
@@ -1388,7 +1470,15 @@ function fixEmptyQuestion(qText) {
   return base;
 }
 
-function composeReply(p, userText, mirror, qText, minimalistNow) {
+function composeReply(p, userText, mirror, qText, minimalistNow, replyOptions = {}) {
+  const options = {
+    standalone: false,
+    suppressMirror: false,
+    suppressLead: false,
+    suppressBridge: false,
+    suppressClosing: false,
+    ...replyOptions
+  };
   const lead = refinedLeadLine(userText);
   const lens = centerLensLine();
   const closing = refinedPresenceClosing(p);
@@ -1412,15 +1502,25 @@ function composeReply(p, userText, mirror, qText, minimalistNow) {
             ])
             : "";
 
+  if (options.standalone) {
+    return safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, pode continuar?`;
+  }
+
   if (minimalistNow || p.key === "D") {
     return safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, pode continuar?`;
   }
 
   const parts = [];
-  if (lead && p.key === "B") parts.push(lead);
-  if (safeMirror && !(p.key === "B" && bridge && Math.random() < 0.6)) parts.push(safeMirror);
-  if (lead && p.key !== "B") parts.push(lead);
-  if (bridge) parts.push(bridge);
+  if (!options.suppressLead && lead && p.key === "B") parts.push(lead);
+  if (
+    !options.suppressMirror &&
+    safeMirror &&
+    !(p.key === "B" && bridge && Math.random() < 0.6)
+  ) {
+    parts.push(safeMirror);
+  }
+  if (!options.suppressLead && lead && p.key !== "B") parts.push(lead);
+  if (!options.suppressBridge && bridge) parts.push(bridge);
 
   if (lens) {
     if (p.key === "A") {
@@ -1432,7 +1532,7 @@ function composeReply(p, userText, mirror, qText, minimalistNow) {
 
   parts.push(safeQuestion || `Falando em “${fallbackUserAnchor(userText)}”, o que aparece agora?`);
 
-  if (closing && !(p.key === "B" && Math.random() < 0.55)) {
+  if (!options.suppressClosing && closing && !(p.key === "B" && Math.random() < 0.55)) {
     parts.push(closing);
   }
 
@@ -1504,12 +1604,19 @@ function izaReply(userText) {
     return presenceWrap(p, composed);
   }
 
-  const externalQ = runExternalRules(t, p, mix);
-  if (externalQ) {
+  const externalReply = runExternalRules(t, p, mix);
+  if (externalReply && externalReply.text) {
     const mirror = shortMirror(p, t);
     const minimalistNow = shouldBeMinimalNow(p, mix);
-    const composed = composeReply(p, t, mirror, externalQ, minimalistNow);
-    return presenceWrap(p, composed);
+    const composed = composeReply(
+      p,
+      t,
+      mirror,
+      externalReply.text,
+      minimalistNow,
+      externalReply.options
+    );
+    return externalReply.options?.skipPresenceWrap ? composed : presenceWrap(p, composed);
   }
 
   const memChance = Math.min(
@@ -1811,6 +1918,7 @@ function resetConversationRuntime() {
 
   IZA_ENGINE.memory = [];
   IZA_ENGINE.usedRecently = [];
+  IZA_ENGINE.lastRuleName = "";
 
   state.viewHistory = [];
   state.viewIndex = -1;
