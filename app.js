@@ -132,6 +132,7 @@ function loadAndResumeSession() {
     IZA_ENGINE.memory = saved.IZA_ENGINE.memory || [];
     IZA_ENGINE.usedRecently = saved.IZA_ENGINE.usedRecently || [];
     IZA_ENGINE.lastRuleName = saved.IZA_ENGINE.lastRuleName || "";
+    IZA_ENGINE.lineHistory = saved.IZA_ENGINE.lineHistory || Object.create(null);
   }
 
   // Restore the UI using the view history
@@ -572,7 +573,10 @@ function presenceWrap(p, coreText) {
 
   if (minimalNow) return coreText.trim();
 
-  if (/\n/.test(coreText)) soft = "";
+  if (/\n/.test(coreText)) {
+    soft = "";
+    if (coreText.split("\n").filter(Boolean).length >= 3) close = "";
+  }
 
   const prefix = soft ? soft + " " : "";
   const suffix = close ? "\n" + close : "";
@@ -580,7 +584,50 @@ function presenceWrap(p, coreText) {
 }
 
 // -------------------- ELIZA ENGINE --------------------
-const IZA_ENGINE = { memory: [], usedRecently: [], lastRuleName: "" };
+const IZA_ENGINE = {
+  memory: [],
+  usedRecently: [],
+  lastRuleName: "",
+  lineHistory: Object.create(null)
+};
+
+function ensureLineHistory() {
+  if (!IZA_ENGINE.lineHistory || typeof IZA_ENGINE.lineHistory !== "object") {
+    IZA_ENGINE.lineHistory = Object.create(null);
+  }
+  return IZA_ENGINE.lineHistory;
+}
+
+function pickVariedLine(bucket, variants, maxRecent = 4) {
+  const items = (variants || [])
+    .map((variant, index) => {
+      if (!variant) return null;
+      if (typeof variant === "string") {
+        return { key: `${bucket}_${index}_${variant}`, text: variant };
+      }
+      const text = String(variant.text || "").trim();
+      if (!text) return null;
+      return {
+        key: String(variant.key || `${bucket}_${index}`),
+        text
+      };
+    })
+    .filter(Boolean);
+
+  if (!items.length) return "";
+
+  const history = ensureLineHistory();
+  const recent = Array.isArray(history[bucket]) ? history[bucket] : [];
+  const pool = items.filter((item) => !recent.includes(item.key));
+  const chosen = pick(pool.length ? pool : items);
+  if (!chosen) return "";
+
+  history[bucket] = [chosen.key]
+    .concat(recent.filter((key) => key !== chosen.key))
+    .slice(0, maxRecent);
+
+  return chosen.text;
+}
 
 const pronounPairs = [
   [/\beu\b/gi, "você"],
@@ -1057,7 +1104,7 @@ function pickWeightedRule(candidates, p, mix) {
 
   const sorted = weighted.sort((a, b) => b.weight - a.weight);
   const topWeight = sorted[0].weight;
-  const finalists = sorted.filter((item) => item.weight >= topWeight * 0.92);
+  const finalists = sorted.filter((item) => item.weight >= topWeight * 0.97);
   return pick(finalists);
 }
 
@@ -1470,6 +1517,215 @@ function fixEmptyQuestion(qText) {
   return base;
 }
 
+function recentTurnsByRole(role, limit = 1) {
+  return (state.turns || [])
+    .filter((turn) => turn && turn.role === role)
+    .slice(-Math.max(1, limit));
+}
+
+function recentIzaTexts(limit = 1) {
+  return recentTurnsByRole("iza", limit)
+    .map((turn) => String(turn.text || "").trim())
+    .filter(Boolean);
+}
+
+function isMirrorishText(text) {
+  const normalized = normalizeSearchText(text).replace(/\s+/g, " ").trim();
+  return /(?:se eu devolver o que apareceu com mais forca|o que estou escutando no seu texto e|voce trouxe isto|tem um ponto vivo ai|no que voce disse ficou aceso|estou te ouvindo por aqui|vou recortar o nucleo assim|no centro do que voce disse esta isto|tomemos esta parte por um instante|se eu sigo seu eixo|se entendi seu eixo)/.test(normalized);
+}
+
+function isSocraticPrompt(text) {
+  const normalized = normalizeSearchText(text).replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+  if (/^(quem|que|qual|como|por que|quando voce diz|voce diria|isso vale|se )/.test(normalized)) {
+    return true;
+  }
+  return /(?:quem julga|ponte ou limite|o que permanece comum|compreender isso e o mesmo|arte tecnica ou impulso|o outro limita|o que ainda permanece comum|o que torna possivel|dissolver o misterio|caso particular para a regra geral)/.test(normalized);
+}
+
+function shouldIncludeMirrorLine(p, questionText, options = {}) {
+  if (options.suppressMirror || options.standalone || options.skipPresenceWrap) return false;
+  if (isSocraticPrompt(questionText)) return false;
+  if (recentIzaTexts(1).some(isMirrorishText)) return false;
+  if (state.trackKey === "iniciante" && state.stepIndex >= 1) return false;
+  if (p.key === "H" && (state.presenceMix?.C || 0) > 0.4 && state.trackKey !== "inspirada") {
+    return false;
+  }
+  return true;
+}
+
+function shortMirror(presence, userText) {
+  const t = (userText || "").trim();
+  if (!t) return presence.key === "D" ? "Continue." : "Pode seguir.";
+  const anchor =
+    extractReflectiveAnchor(t) ||
+    swapPronouns(t.split(/\s+/).slice(0, 10).join(" "));
+
+  if (presence.mirror === "tiny") {
+    return `"${anchor}"`;
+  }
+  if (presence.mirror === "short") {
+    if (presence.key === "B") {
+      return pickVariedLine("mirror_short_b", [
+        { key: "aceso", text: `No que voce disse, ficou aceso: "${anchor}".` },
+        { key: "ouvindo", text: `Estou te ouvindo por aqui: "${anchor}".` },
+        { key: "pausa", text: `Por um momento, fico com isto: "${anchor}".` }
+      ]);
+    }
+    return pickVariedLine("mirror_short_default", [
+      { key: "trouxe", text: `Voce trouxe isto: "${anchor}".` },
+      { key: "vivo", text: `Tem um ponto vivo ai: "${anchor}".` },
+      { key: "recorte", text: `Posso recortar assim: "${anchor}".` }
+    ]);
+  }
+  if (presence.key === "C") {
+    return pickVariedLine("mirror_medium_c", [
+      { key: "centro", text: `No centro do que voce disse esta isto: "${anchor}".` },
+      { key: "nucleo", text: `Vou recortar o nucleo assim: "${anchor}".` },
+      { key: "eixo", text: `Se entendi seu eixo, ele passa por "${anchor}".` }
+    ]);
+  }
+  return pickVariedLine("mirror_medium_default", [
+    { key: "escutando", text: `O que estou escutando no seu texto e: "${anchor}".` },
+    { key: "forca", text: `Se eu devolver o que apareceu com mais forca, diria: "${anchor}".` },
+    { key: "tomemos", text: `Tomemos esta parte por um instante: "${anchor}".` },
+    { key: "eixo", text: `Se eu sigo seu eixo, chego a isto: "${anchor}".` }
+  ]);
+}
+
+function adaptRuleByTrack(text) {
+  const base = String(text || "").trim();
+  if (!base) return base;
+
+  if (state.trackKey === "iniciante") {
+    if (/detalhe|cena|concreto|gesto|lugar/i.test(base)) return base;
+    if (isSocraticPrompt(base)) return base;
+    if (/\?$/.test(base) && base.length >= 42) return base;
+    return base + " " + pickVariedLine("track_iniciante_suffix", [
+      { key: "caso", text: "Diga isso por meio de um caso pequeno." },
+      { key: "detalhe", text: "Se puder, traga um detalhe concreto." },
+      { key: "cena", text: "Teste isso numa cena breve." }
+    ]);
+  }
+  if (state.trackKey === "intermediaria") {
+    if (/objetiv|1-2 frases|1 frase|duas frases/i.test(base)) return base;
+    if (isSocraticPrompt(base)) return base;
+    return base + " " + pickVariedLine("track_intermediaria_suffix", [
+      { key: "objetiva", text: "Responda de forma objetiva em 1-2 frases." },
+      { key: "tese", text: "Se puder, formule a tese em uma frase." },
+      { key: "prova", text: "Tente nomear a ideia e a prova em seguida." }
+    ]);
+  }
+  if (state.trackKey === "inspirada") {
+    if (/fluxo|livre|imagem|cena/i.test(base)) return base;
+    if (isSocraticPrompt(base)) return base;
+    if (/\?$/.test(base) && base.length >= 42) return base;
+    return base + " " + pickVariedLine("track_inspirada_suffix", [
+      { key: "fluxo", text: "Responda no fluxo." },
+      { key: "imagem", text: "Se vier uma imagem, siga por ela." },
+      { key: "frase", text: "Deixe a proxima frase aparecer sem forcar." }
+    ]);
+  }
+  return base;
+}
+
+function refinedPresenceClosing(p) {
+  const banks = {
+    A: [
+      "Se quiser, leve isso um passo adiante.",
+      "Veja se isso se sustenta num caso pequeno.",
+      "Continue quando o proximo passo aparecer."
+    ],
+    B: [
+      "Pode ir no seu ritmo.",
+      "Se quiser, eu sigo com voce.",
+      "Ainda ha algo aqui que pode amadurecer."
+    ],
+    C: [
+      "Responda em uma frase.",
+      "Teste a consequencia disso.",
+      "Agora sustente essa distincao."
+    ],
+    D: ["Siga.", "Mais."]
+  };
+
+  if (p.key === "H" && state.presenceMix) {
+    const bucket =
+      (state.presenceMix.D || 0) > 0.5 ? "D" :
+      (state.presenceMix.C || 0) > 0.4 ? "C" :
+      (state.presenceMix.B || 0) > 0.35 ? "B" : "A";
+    return pickVariedLine(`closing_${bucket}`, banks[bucket]);
+  }
+
+  const bucket = banks[p.key] ? p.key : "A";
+  return pickVariedLine(`closing_${bucket}`, banks[bucket]);
+}
+
+function refinedLeadLine(userText) {
+  const p = state.presence || PRESENCES.A;
+  const t = (userText || "").trim();
+  if (!t || p.key === "D") return "";
+
+  if (p.key === "H" && state.presenceMix) {
+    const mix = state.presenceMix;
+    if ((mix.D || 0) > 0.55) return "";
+    if ((mix.C || 0) > 0.45) {
+      return pickVariedLine("lead_h_c", [
+        { key: "nucleo", text: "Vamos ao nucleo." },
+        { key: "delimite", text: "Delimite o ponto central." },
+        { key: "recorte", text: "Recorte melhor o que apareceu." }
+      ]);
+    }
+    if ((mix.B || 0) > 0.35) {
+      return pickVariedLine("lead_h_b", [
+        { key: "com", text: "Estou com voce." },
+        { key: "importa", text: "Isso importa." },
+        { key: "escutar", text: "Vamos escutar melhor esse ponto." }
+      ]);
+    }
+    return pickVariedLine("lead_h_a", [
+      { key: "entendi", text: "Entendi." },
+      { key: "certo", text: "Certo." },
+      { key: "olhar", text: "Vamos olhar isso melhor." }
+    ]);
+  }
+
+  if (p.key === "A") {
+    return pickVariedLine("lead_a", [
+      { key: "entendi", text: "Entendi." },
+      { key: "certo", text: "Certo." },
+      { key: "pista", text: "Talvez o texto ja tenha uma pista ai." },
+      { key: "respirar", text: "Vamos deixar isso respirar." }
+    ]);
+  }
+
+  if (p.key === "B") {
+    const ct = state.centerType;
+    const bank = [
+      { key: "confiar", text: "Obrigada por trazer isso." },
+      { key: "sem_pressa", text: "Estou com voce, sem pressa." },
+      { key: "escuta", text: "Entendi. Isso pede escuta." },
+      { key: "ouvir", text: "Vamos ouvir melhor o que apareceu aqui." },
+      ct === "ferida" ? { key: "ferida", text: "Isso toca num ponto sensivel." } : null,
+      ct === "desejo" ? { key: "desejo", text: "Isso tem pulsacao." } : null,
+      ct === "pergunta" ? { key: "pergunta", text: "Essa pergunta esta viva." } : null,
+      ct === "afirmacao" ? { key: "afirmacao", text: "Isso afirma algo importante." } : null
+    ].filter(Boolean);
+    return pickVariedLine("lead_b", bank);
+  }
+
+  if (p.key === "C") {
+    return pickVariedLine("lead_c", [
+      { key: "nucleo", text: "Vamos ao nucleo." },
+      { key: "preciso", text: "Seja preciso." },
+      { key: "delimite", text: "Delimite o que esta em jogo." },
+      { key: "recorte", text: "Recorte o ponto central." }
+    ]);
+  }
+
+  return "";
+}
+
 function composeReply(p, userText, mirror, qText, minimalistNow, replyOptions = {}) {
   const options = {
     standalone: false,
@@ -1484,6 +1740,7 @@ function composeReply(p, userText, mirror, qText, minimalistNow, replyOptions = 
   const closing = refinedPresenceClosing(p);
   const safeQuestion = ensureMeaningfulTemplateText(fixEmptyQuestion(qText), userText);
   const safeMirror = ensureMeaningfulTemplateText(mirror, userText);
+  const includeMirror = shouldIncludeMirrorLine(p, safeQuestion, options);
   const anchor = extractReflectiveAnchor(userText);
   const bridge =
     !anchor || p.key === "D"
@@ -1513,7 +1770,7 @@ function composeReply(p, userText, mirror, qText, minimalistNow, replyOptions = 
   const parts = [];
   if (!options.suppressLead && lead && p.key === "B") parts.push(lead);
   if (
-    !options.suppressMirror &&
+    includeMirror &&
     safeMirror &&
     !(p.key === "B" && bridge && Math.random() < 0.6)
   ) {
@@ -1919,6 +2176,7 @@ function resetConversationRuntime() {
   IZA_ENGINE.memory = [];
   IZA_ENGINE.usedRecently = [];
   IZA_ENGINE.lastRuleName = "";
+  IZA_ENGINE.lineHistory = Object.create(null);
 
   state.viewHistory = [];
   state.viewIndex = -1;
