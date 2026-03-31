@@ -7,6 +7,111 @@
 (function () {
   const RULES_BASE = [
     {
+      name: "socratic_linguagem_mundo",
+      pattern: /\b(?:linguagem|palavra|idioma|discurso)\b[\s\S]{0,90}\b(?:mundo|unidade|coexist[eê]ncia|co-exist[eê]ncia|comum|particularidade|paradoxo|contradic|logica)\b/i,
+      responses: [
+        "Se cada linguagem abre um mundo, o que ainda permanece comum entre esses mundos?",
+        "Quando voce fala em linguagem, esta pensando numa ponte ou num limite?",
+        "A unidade que voce busca esta nas palavras, ou no uso que fazemos delas?"
+      ],
+      memory: [
+        "Se isso vale para toda linguagem, vale tambem para o silencio?"
+      ],
+      responseMode: "direct",
+      priority: 3.35
+    },
+    {
+      name: "socratic_saber_interpretar",
+      pattern: /\b(?:compreender|entender|saber|conhecer|interpretar|explicar)\b[\s\S]{0,80}\b(?:mist[eé]rio|linguagem|arte|poesia|singularidade|alteridade|verdade|mundo|tema)\b/i,
+      responses: [
+        "Voce diria que compreender isso e o mesmo que saber explica-lo?",
+        "Falar bem disso prova conhecimento, ou apenas familiaridade?",
+        "O que aqui e interpretacao, e o que aqui seria conhecimento?"
+      ],
+      responseMode: "direct",
+      priority: 3.15
+    },
+    {
+      name: "socratic_paradoxo",
+      pattern: /\b(?:paradoxo|paradoxos|contradic|logica|logicas|particularidade)\b/i,
+      responses: [
+        "O que faz disso uma contradicao real, e nao apenas dois pontos de vista?",
+        "Voce esta descrevendo a coisa, ou a dificuldade de pensa-la?",
+        "Essas logicas convivem no mesmo plano, ou cada uma vale em um contexto?"
+      ],
+      responseMode: "direct",
+      priority: 3.11
+    },
+    {
+      name: "socratic_arte_tecnica",
+      pattern: /\b(?:arte|tecnica|t[eé]cnica|of[ií]cio|dom|inspira[cç][aã]o|entusiasmo)\b/i,
+      responses: [
+        "Isso lhe parece arte, tecnica ou impulso?",
+        "Quem julgaria melhor isso: quem pratica, quem interpreta ou quem escuta?",
+        "Se isso e uma tecnica, por que nao aparece do mesmo modo em todos os casos?"
+      ],
+      responseMode: "direct",
+      priority: 3.05
+    },
+    {
+      name: "socratic_alteridade",
+      pattern: /\b(?:alteridade|outro|singularidade|coexist[eê]ncia|conviv[eê]ncia|limita)\b/i,
+      responses: [
+        "O outro limita sua singularidade, ou a torna visivel?",
+        "Sem o outro, sua singularidade seria menos ameacada ou menos nitida?",
+        "Voce quer proteger sua singularidade, ou compreende-la melhor diante do outro?"
+      ],
+      memory: [
+        "Se o outro desaparecesse, o conflito desapareceria junto?"
+      ],
+      responseMode: "direct",
+      priority: 3.12
+    },
+    {
+      name: "socratic_totalidade",
+      pattern: /\b(?:cada|todo|toda|todos|todas)\b[\s\S]{0,80}\b(?:linguagem|mundo|arte|ser|palavra|vers[aã]o|unidade)\b/i,
+      responses: [
+        "Se isso vale para cada caso, vale tambem para o todo?",
+        "O que muda quando voce passa do caso particular para a regra geral?",
+        "Essa afirmacao vale sempre, ou apenas deste ponto de vista?"
+      ],
+      responseMode: "direct",
+      priority: 3.08
+    },
+    {
+      name: "socratic_conflito",
+      pattern: /\b(?:conflito|atrito|impasse|choque|tens[aã]o)\b/i,
+      responses: [
+        "Esse conflito opoe duas ideias, dois desejos ou dois modos de nomear a mesma coisa?",
+        "Se voce tivesse de separar os dois polos do conflito, quais seriam?",
+        "O conflito esta no objeto, ou no modo como voce se coloca diante dele?"
+      ],
+      responseMode: "direct",
+      priority: 3.06
+    },
+    {
+      name: "socratic_misterio",
+      pattern: /\b(?:mist[eé]rio|porta\s+de\s+entrada|entrada)\b/i,
+      responses: [
+        "Voce quer dissolver o misterio, ou apenas encontrar uma entrada justa para ele?",
+        "Se o misterio permanecesse, isso invalidaria a busca?",
+        "Voce quer explicar esse misterio, ou aprender a se orientar dentro dele?"
+      ],
+      responseMode: "direct",
+      priority: 3.1
+    },
+    {
+      name: "socratic_silencio",
+      pattern: /\b(?:calar|sil[eê]ncio|calar-se)\b/i,
+      responses: [
+        "Calar resolve o conflito, ou apenas impede que ele apareca?",
+        "Se voce cala, o problema desaparece ou apenas muda de forma?",
+        "O silencio aqui protege algo, ou renuncia a algo?"
+      ],
+      responseMode: "direct",
+      priority: 3.07
+    },
+    {
       name: "generalizacao_grupo",
       pattern: /\b(?:homens?|mulheres?|pessoas?|men|women|people)\b[\s\S]{0,40}\b(?:s[aã]o|are)\b[\s\S]{0,30}\b(?:todos?\s+iguais|iguais|all alike|the same)\b/i,
       responses: [
