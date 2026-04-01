@@ -5,6 +5,49 @@
 // Optional context:
 // - window.IZA_TRACK_KEY = "iniciante" | "intermediaria" | "inspirada"
 (function () {
+  const ION_SOCRATIC_MARKERS = [
+    {
+      key: "linguagem_mundo",
+      label: "linguagem e mundo",
+      markers: ["linguagem", "palavra", "idioma", "discurso", "nome", "mundo", "unidade", "coexistencia", "comum"]
+    },
+    {
+      key: "saber_interpretar",
+      label: "saber e interpretacao",
+      markers: ["compreender", "entender", "saber", "conhecer", "interpretar", "explicar", "sentido", "significado", "verdade"]
+    },
+    {
+      key: "arte_tecnica",
+      label: "arte, tecnica e juizo",
+      markers: ["arte", "tecnica", "oficio", "metodo", "criterio", "julgar", "julgamento", "pratica", "escuta", "interprete"]
+    },
+    {
+      key: "poesia_inspiracao",
+      label: "poesia e inspiracao",
+      markers: ["poeta", "poesia", "verso", "rapsodo", "homero", "musa", "inspiracao", "entusiasmo", "dom"]
+    },
+    {
+      key: "alteridade",
+      label: "alteridade e singularidade",
+      markers: ["outro", "alteridade", "singularidade", "convivencia", "presenca", "limite"]
+    },
+    {
+      key: "totalidade_regra",
+      label: "todo, parte e regra",
+      markers: ["cada", "todo", "todos", "toda", "regra", "geral", "caso", "particular", "unidade"]
+    },
+    {
+      key: "conflito_distincao",
+      label: "conflito e distincao",
+      markers: ["conflito", "atrito", "tensao", "opostos", "distincao", "diferenca", "contradicao", "paradoxo", "logica"]
+    },
+    {
+      key: "misterio_limite",
+      label: "misterio e limite",
+      markers: ["misterio", "porta", "entrada", "limite", "furo", "abismo", "silencio", "calar"]
+    }
+  ];
+
   const RULES_BASE = [
     {
       name: "socratic_linguagem_mundo",
@@ -17,6 +60,8 @@
       memory: [
         "Se isso vale para toda linguagem, vale tambem para o silencio?"
       ],
+      styleFamily: "socratic",
+      markerKeys: ["linguagem_mundo", "totalidade_regra"],
       responseMode: "direct",
       priority: 3.35
     },
@@ -28,6 +73,8 @@
         "Falar bem disso prova conhecimento, ou apenas familiaridade?",
         "O que aqui e interpretacao, e o que aqui seria conhecimento?"
       ],
+      styleFamily: "socratic",
+      markerKeys: ["saber_interpretar"],
       responseMode: "direct",
       priority: 3.15
     },
@@ -39,6 +86,8 @@
         "Voce esta descrevendo a coisa, ou a dificuldade de pensa-la?",
         "Essas logicas convivem no mesmo plano, ou cada uma vale em um contexto?"
       ],
+      styleFamily: "socratic",
+      markerKeys: ["conflito_distincao", "linguagem_mundo"],
       responseMode: "direct",
       priority: 3.11
     },
@@ -50,6 +99,8 @@
         "Quem julgaria melhor isso: quem pratica, quem interpreta ou quem escuta?",
         "Se isso e uma tecnica, por que nao aparece do mesmo modo em todos os casos?"
       ],
+      styleFamily: "socratic",
+      markerKeys: ["arte_tecnica", "poesia_inspiracao"],
       responseMode: "direct",
       priority: 3.05
     },
@@ -64,6 +115,8 @@
       memory: [
         "Se o outro desaparecesse, o conflito desapareceria junto?"
       ],
+      styleFamily: "socratic",
+      markerKeys: ["alteridade", "conflito_distincao"],
       responseMode: "direct",
       priority: 3.12
     },
@@ -75,6 +128,8 @@
         "O que muda quando voce passa do caso particular para a regra geral?",
         "Essa afirmacao vale sempre, ou apenas deste ponto de vista?"
       ],
+      styleFamily: "socratic",
+      markerKeys: ["totalidade_regra", "linguagem_mundo"],
       responseMode: "direct",
       priority: 3.08
     },
@@ -86,6 +141,8 @@
         "Se voce tivesse de separar os dois polos do conflito, quais seriam?",
         "O conflito esta no objeto, ou no modo como voce se coloca diante dele?"
       ],
+      styleFamily: "socratic",
+      markerKeys: ["conflito_distincao", "alteridade"],
       responseMode: "direct",
       priority: 3.06
     },
@@ -97,6 +154,8 @@
         "Se o misterio permanecesse, isso invalidaria a busca?",
         "Voce quer explicar esse misterio, ou aprender a se orientar dentro dele?"
       ],
+      styleFamily: "socratic",
+      markerKeys: ["misterio_limite", "saber_interpretar"],
       responseMode: "direct",
       priority: 3.1
     },
@@ -108,6 +167,8 @@
         "Se voce cala, o problema desaparece ou apenas muda de forma?",
         "O silencio aqui protege algo, ou renuncia a algo?"
       ],
+      styleFamily: "socratic",
+      markerKeys: ["misterio_limite", "conflito_distincao"],
       responseMode: "direct",
       priority: 3.07
     },
@@ -719,6 +780,7 @@
 
   // Default (compat): A sem trilha
   window.IZA_RULES = compileRules("A", null);
+  window.IZA_ION_MARKERS = ION_SOCRATIC_MARKERS;
   window.IZA_RULES_BASE = RULES_BASE;
   window.IZA_RULE_OVERRIDES = RULE_OVERRIDES;
   window.IZA_RULE_TRACK_OVERRIDES = RULE_TRACK_OVERRIDES;

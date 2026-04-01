@@ -2022,11 +2022,13 @@ function detectSceneSignals(text) {
   const hasAgent = /\b(?:eu|voce|ele|ela|nos|alguem|ninguem|homem|mulher|menino|menina|mae|pai|filho|filha|amigo|amiga|professor|professora|pesquisador|pesquisadora|cientista|vizinho|vizinha|namorado|namorada|artista|medico|medica|agricultor|agricultora|corpo|rosto|mao|olhos)\b/.test(normalized) || /(?:^|\s)[A-Z][a-z]{2,}/.test(raw);
   const hasGesture = /\b(?:olha|olhou|olhando|ve|viu|vendo|anda|andou|entrou|saiu|ficou|parou|segura|segurou|abre|abriu|fecha|fechou|disse|fala|falou|grita|gritou|cala|calou|respira|respirou|escreve|escreveu|le|leu|toca|tocou|encosta|encostou|corre|correu|senta|sentou|levanta|levantou|chora|chorou|ri|riu|corta|cortou|empurra|empurrou|puxa|puxou|atravessa|atravessou|espera|esperou|treme|tremendo|tremia)\b/.test(normalized);
   const hasSpeech = /["""']/.test(raw) || /\b(?:disse|fala|falou|gritou|perguntou|respondeu)\b/.test(normalized);
+  const hasConcreteAnchor = /\b(?:rua|casa|quarto|sala|cozinha|janela|porta|escola|cidade|bairro|praca|ponte|praia|rio|bar|mercado|onibus|hospital|floresta|quintal|fazenda|igreja|corredor|mesa|amazonia|antartida|laje|favela|periferia|viela|muro|paredao|calcada|fogao|corpo|rosto|mao|olhos|varal)\b/.test(normalized);
   return {
     hasPlace,
     hasAgent,
     hasGesture,
     hasSpeech,
+    hasConcreteAnchor,
     wordCount: countMeaningfulWords(text),
     score: [hasPlace, hasAgent, hasGesture].filter(Boolean).length
   };
@@ -2034,10 +2036,15 @@ function detectSceneSignals(text) {
 
 function detectContrastSignals(text) {
   const normalized = normalizeSearchText(text);
+  const clean = normalizeInlineText(text);
   return {
     wordCount: countMeaningfulWords(text),
     hasExplicitPair: /\b(?:x|vs|versus)\b/.test(normalized),
-    hasDualFrame: /\b(?:entre|de um lado|de outro|ao mesmo tempo|mas|contra|tensao|conflito)\b/.test(normalized)
+    hasDualFrame: /\b(?:entre|de um lado|de outro|ao mesmo tempo|mas|contra|tensao|conflito)\b/.test(normalized),
+    hasBetweenFrame: /\bentre\b.+\b(?:e|ou)\b.+/.test(normalized),
+    hasOppositionFrame: /\b(?:de um lado|do outro|por outro lado|ao mesmo tempo|contra|mas|porem|versus|vs)\b/.test(normalized) || /\sx\s/.test(` ${normalized} `),
+    hasTensionLabel: /\b(?:conflito|desejo|risco|duvida|tensao)\b/.test(normalized),
+    isSingleLabelOnly: /^(?:conflito|desejo|risco|duvida|dúvida|tensao|tensão)\s*$/i.test(clean)
   };
 }
 
@@ -2085,9 +2092,24 @@ function validateStepInput(stepKey, text) {
       : { ok: false, reason: "center_name" };
   }
 
+  if (stepKey === "atrito") {
+    const contrast = detectContrastSignals(text);
+    const detailedTension =
+      contrast.hasExplicitPair ||
+      contrast.hasBetweenFrame ||
+      contrast.hasOppositionFrame;
+    return (contrast.wordCount >= 4 && detailedTension && !contrast.isSingleLabelOnly)
+      ? { ok: true, contrast }
+      : { ok: false, reason: "atrito", contrast };
+  }
+
   if (stepKey === "cena" || stepKey === "concreto") {
     const scene = detectSceneSignals(text);
-    const sceneOk = scene.wordCount >= 6 && (scene.score >= 2 || (scene.score >= 1 && scene.hasSpeech));
+    const sceneOk =
+      scene.wordCount >= 6 &&
+      scene.hasConcreteAnchor &&
+      (scene.hasGesture || scene.hasSpeech) &&
+      (scene.score >= 2 || (scene.hasAgent && scene.hasSpeech));
     return sceneOk
       ? { ok: true, scene }
       : { ok: false, reason: "scene", scene };
@@ -2126,7 +2148,8 @@ function buildStepValidationReply(stepKey) {
   const coreByStep = {
     centro: "Condense isso em 1 frase-eixo.",
     tipo_centro: "Se quiser, nomeie como pergunta, afirmacao, ferida ou desejo. Se nao, diga em poucas palavras como esse centro se apresenta.",
-    cena: "Ainda esta abstrato. Traga uma cena pequena: diga onde isso acontece, quem esta ali e qual gesto aparece.",
+    atrito: "Nao fique so no rotulo. Nomeie a tensao em duas pontas. Ex.: prazer x obrigacao.",
+    cena: "Ainda esta abstrato. Traga uma cena pequena: diga onde isso acontece, quem esta ali e qual gesto ou fala aparece.",
     concreto: "Quero ver isso no mundo. Mostre uma cena, uma fala, um gesto ou um lugar.",
     contraste: "Nomeie claramente as duas forcas em tensao. Ex.: medo x vontade.",
     sintese: "Reuna isso em ate 3 linhas, sem abrir um novo debate.",
@@ -2689,7 +2712,16 @@ const JOURNEY_STOPWORDS = new Set([
   "certamente", "proprio", "propria", "proprios", "proprias", "jeito", "modo", "passo", "frase",
   "linha", "linhas", "sintese", "versao", "forma", "registro", "trilha", "jornada", "nucleo",
   "centro", "pergunta", "afirmacao", "ferida", "desejo", "questionamento", "resposta", "detalhe",
-  "detalhes", "coisas", "algo", "alguma", "algumas", "algum", "alguns", "melhor", "ainda"
+  "detalhes", "coisas", "algo", "alguma", "algumas", "algum", "alguns", "melhor", "ainda",
+  "quanto", "quantos", "quanta", "quantas", "todo", "todos", "toda", "todas",
+  "tentar", "tento", "parece", "parecer", "deixa", "deixar", "certo", "certa", "certos", "certas",
+  "reflexao", "reflexoes"
+]);
+
+const JOURNEY_WEAK_TOKENS = new Set([
+  "acha", "achar", "acho", "amo", "amar", "deve", "dever", "deveria",
+  "gosta", "gostar", "pode", "poder", "poderia", "podia", "precisa", "precisar",
+  "quer", "querer", "sabe", "saber"
 ]);
 
 function clipText(text, max = 160) {
@@ -2725,7 +2757,7 @@ const SCENE_PRIORITY_TOKENS = new Set([
 
 function scoreKeywordToken(token, contextWeight = 1) {
   const lengthBonus = Math.min(2, Math.max(0, token.length - 5) * 0.2);
-  const symbolicBonus = /(?:dade|mento|cao|coes|gem|ario|arios|eiro|eira|ismo|ura|ez|al|or|orio)$/.test(token)
+  const symbolicBonus = /(?:dade|mento|cao|coes|gem|ario|arios|eiro|eira|ismo|ista|istas|ura|ez|al|or|orio)$/.test(token)
     ? 0.8
     : 0;
   const sceneBonus = SCENE_PRIORITY_TOKENS.has(token) ? 1.15 : 0;
@@ -2736,7 +2768,7 @@ function tokenizeForKeywords(text) {
   return normalizeSearchText(text)
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((token) => token.length >= 4 && !JOURNEY_STOPWORDS.has(token));
+    .filter((token) => token.length >= 4 && !JOURNEY_STOPWORDS.has(token) && !JOURNEY_WEAK_TOKENS.has(token));
 }
 
 function listToNaturalLanguage(items) {
@@ -2806,12 +2838,12 @@ function resolveKeywordSources() {
     .filter((entry) => entry.text);
 
   if (state.centerSemanticTail) {
-    sources.push({ text: normalizeInlineText(state.centerSemanticTail), weight: 3.6 });
+    sources.push({ text: normalizeInlineText(state.centerSemanticTail), weight: 4.2 });
   }
 
   const concreteAnchor = resolveConcreteSceneAnchorText();
   if (concreteAnchor) {
-    sources.push({ text: concreteAnchor, weight: 3.4 });
+    sources.push({ text: concreteAnchor, weight: 3.8 });
   }
 
   const finalAnchor = resolveFinalAnchorText();
@@ -3221,14 +3253,6 @@ function buildFinalRecordTranscript(payload) {
 
   if (payload.keywords?.length) {
     parts.push(`\nPALAVRAS-CHAVE:\n${payload.keywords.join(", ")}\n`);
-  }
-
-  if (payload.rubric?.items) {
-    parts.push(`\nRUBRICA DE TESTE:\n${formatRubricForTranscript(payload.rubric)}\n`);
-  }
-
-  if (payload.doneChecklist) {
-    parts.push(`\nDEFINICAO DE PRONTO:\n${formatDoneChecklistForTranscript(payload.doneChecklist)}\n`);
   }
 
   if (payload.literaryGift?.fragment) {

@@ -906,8 +906,3 @@ hr {
     scroll-behavior: auto !important;
   }
 }
-
-/* PATCH UX: se o #app existir fora do <main>, evita tela “curta” */
-#app {
-  min-height: 60vh;
-}
