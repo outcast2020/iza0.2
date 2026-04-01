@@ -22,7 +22,7 @@
 // ==========================================
 
 const WEBAPP_URL =
-  "https://script.google.com/macros/s/AKfycbyl0Py3Vt7fzW6pt0BESZZCsGlqh9A1Dkt4iu9zTAN1QQV6j4_xnfmXmoPkZWh-AoV4/exec";
+  "https://script.google.com/macros/s/AKfycbyyI1PH5SXz4R6cn1Zzl1NPNQgMK7eI_KQRBiFa_wQX9Xg6-ZrIO53r0xi6B1ciTBc/exec";
 
 const MIN_INSPIRED_ROUNDS = 7;
 const GIFT_LOOKUP_TIMEOUT_MS = 45000;
@@ -2062,7 +2062,9 @@ function isStrongFinalLine(text) {
   const hasHedging = /\b(?:acho|talvez|parece|quem sabe)\b/i.test(normalized) || /ainda estou pensando|explica melhor/i.test(normalized);
   const weakAdverbs = (normalized.match(/\b(?:principalmente|certamente|sobretudo|geralmente)\b/gi) || []).length;
   const genericWhoFrame = /^quem\b/i.test(normalized) && words >= 10;
-  return !!normalized && words >= 5 && words <= 30 && lines <= 2 && sentenceCount <= 2 && !opensDebate && !hasHedging && weakAdverbs < 2 && !genericWhoFrame && !/\?$/.test(normalized);
+  const imperativeFrame = /^(?:escreva|diga|nomeie|veja|olhe|pense|pergunte|escolha|traga|condense|reuna|de a isso|de a frase)\b/i.test(normalized);
+  const metaWritingFrame = /\b(?:frase que merece permanecer|frase-nucleo|agora escreva|a frase que sobreviveria|escreva apenas a frase)\b/i.test(normalized);
+  return !!normalized && words >= 5 && words <= 30 && lines <= 2 && sentenceCount <= 2 && !opensDebate && !hasHedging && weakAdverbs < 2 && !genericWhoFrame && !imperativeFrame && !metaWritingFrame && !/\?$/.test(normalized);
 }
 
 function validateStepInput(stepKey, text) {
@@ -2136,9 +2138,91 @@ function buildStepValidationReply(stepKey) {
   return prefix ? `${prefix}\n\n${core}` : core;
 }
 
+function buildCenterChoiceFragment(text) {
+  const raw = normalizeInlineText(text);
+  if (!raw) return "";
+
+  let cleaned = raw;
+  const framePatterns = [
+    /^(?:o centro disso(?:\s+e(?:\s+este)?)?|centro|a frase que merece permanecer(?:\s+e)?|frase-nucleo|frase nucleo)\s*[:\-]?\s*/i,
+    /^(?:pra mim|para mim|eu sinto que|quero dizer que)\s*[:,]?\s*/i
+  ];
+
+  for (let i = 0; i < 2; i += 1) {
+    framePatterns.forEach((pattern) => {
+      cleaned = cleaned.replace(pattern, "").trim();
+    });
+  }
+
+  const sentenceCandidates = cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const chosen =
+    sentenceCandidates.find((item) => countMeaningfulWords(item) >= 6) ||
+    cleaned ||
+    raw;
+
+  const clipped = chosen.split(/\s+/).slice(0, 18).join(" ").replace(/[\s,;:.-]+$/, "").trim();
+  return clipped || raw.split(/\s+/).slice(0, 12).join(" ");
+}
+
+function extractConcreteSceneAnchor(text) {
+  const raw = normalizeInlineText(text);
+  if (!raw) return "";
+
+  const sentenceCandidates = raw
+    .split(/(?<=[.!?])\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const chosen =
+    sentenceCandidates.find((item) => detectSceneSignals(item).score >= 2 || detectSceneSignals(item).hasSpeech) ||
+    sentenceCandidates[0] ||
+    raw;
+
+  return chosen.split(/\s+/).slice(0, 20).join(" ").replace(/[\s,;:.-]+$/, "").trim();
+}
+
+function buildConcreteStepReply(text, nextPrompt) {
+  const p = state.presence || PRESENCES.A;
+  const anchor = extractConcreteSceneAnchor(text);
+  const scene = detectSceneSignals(text);
+  const lead =
+    p.key === "D" ? (anchor ? `Fico com esta imagem: "${anchor}".` : "Isso ja tem corpo.") :
+    p.key === "C" ? (anchor ? `Isso ja tem corpo: "${anchor}".` : "Isso ja tem corpo.") :
+    p.key === "B" ? (anchor ? `Isso ganhou corpo nesta imagem: "${anchor}".` : "Isso ganhou corpo.") :
+    (anchor ? `Ha uma cena viva aqui: "${anchor}".` : "Ha uma cena viva aqui.");
+
+  const gestureNudge = scene.hasGesture || scene.hasSpeech
+    ? ""
+    : " Se puder, mantenha o gesto no centro.";
+
+  return `${lead}${gestureNudge}\n\n${nextPrompt}`;
+}
+
+function finalClosureLine() {
+  return state.trackKey === "intermediaria"
+    ? "Fechamos esta travessia. Vou preparar o seu registro."
+    : "Fechamos esta volta. Vou preparar o seu registro.";
+}
+
+function buildFinalStepReply(text) {
+  state.finalDraft = (text || "").trim();
+  const p = state.presence || PRESENCES.A;
+  const lead =
+    p.key === "D" ? "Essa linha se sustenta." :
+    p.key === "C" ? "Essa linha se sustenta." :
+    p.key === "B" ? "Essa linha ja se sustenta." :
+    "Essa linha se sustenta.";
+
+  return `${lead}\n\n${finalClosureLine()}`;
+}
+
 function refinedCenterChoicePrompt(fragment) {
   const p = state.presence || PRESENCES.A;
-  const frag = swapPronouns((fragment || "").trim());
+  const frag = buildCenterChoiceFragment(fragment);
 
   if (p.key === "D") {
     return `"${frag}"\nIsso está mais perto de pergunta, afirmação, ferida ou desejo?\nSe preferir, escreva do seu jeito.`;
@@ -2168,7 +2252,7 @@ const TRACKS = {
         onUser: (t) => {
           state.centerType = null;
           state.centerSemanticTail = "";
-          const frag = t.split(/\s+/).slice(0, 14).join(" ");
+          const frag = buildCenterChoiceFragment(t);
           return refinedCenterChoicePrompt(frag);
         }
       },
@@ -2204,15 +2288,12 @@ const TRACKS = {
       {
         key: "cena",
         prompt: "Passo 3 — Cena\nTraga uma cena concreta: lugar, alguém e um gesto.",
-        onUser: (t) => izaReply(t) + "\n\nPasso 4 — Frase que fica\nEscreva a frase que merece permanecer."
+        onUser: (t) => buildConcreteStepReply(t, "Passo 4 — Frase que fica\nEscreva a frase que merece permanecer.")
       },
       {
         key: "frase_final",
         prompt: "Passo 4 — Frase que fica\nEscreva a frase que merece permanecer.",
-        onUser: (t) => {
-          state.finalDraft = (t || "").trim();
-          return izaReply(t) + "\n\nFechamos esta volta. Vou preparar o seu registro.";
-        },
+        onUser: (t) => buildFinalStepReply(t),
         endScreen: true
       }
     ]
@@ -2232,7 +2313,7 @@ const TRACKS = {
         onUser: (t) => {
           state.centerType = null;
           state.centerSemanticTail = "";
-          const frag = t.split(/\s+/).slice(0, 14).join(" ");
+          const frag = buildCenterChoiceFragment(t);
           return refinedCenterChoicePrompt(frag);
         }
       },
@@ -2260,7 +2341,7 @@ const TRACKS = {
       {
         key: "concreto",
         prompt: "Passo 4 — Concreto\nOnde isso aparece de forma concreta?",
-        onUser: (t) => izaReply(t) + "\n\nPasso 5 — Contraste\nNomeie duas forças em tensão (ex.: medo x vontade)."
+        onUser: (t) => buildConcreteStepReply(t, "Passo 5 — Contraste\nNomeie duas forças em tensão (ex.: medo x vontade).")
       },
       {
         key: "contraste",
@@ -2275,10 +2356,7 @@ const TRACKS = {
       {
         key: "forma_final",
         prompt: "Passo 7 — Forma final\nEscreva a versão que você quer sustentar.",
-        onUser: (t) => {
-          state.finalDraft = (t || "").trim();
-          return izaReply(t) + "\n\nFechamos esta travessia. Vou preparar o seu registro.";
-        },
+        onUser: (t) => buildFinalStepReply(t),
         endScreen: true
       }
     ]
@@ -2298,7 +2376,7 @@ const TRACKS = {
         onUser: (t) => {
           state.centerType = null;
           state.centerSemanticTail = "";
-          const frag = t.split(/\s+/).slice(0, 14).join(" ");
+          const frag = buildCenterChoiceFragment(t);
           return refinedCenterChoicePrompt(frag);
         }
       },
@@ -2605,7 +2683,7 @@ const JOURNEY_STOPWORDS = new Set([
   "nas", "nem", "no", "nos", "nossa", "nosso", "num", "numa", "o", "os", "ou", "para",
   "pela", "pelas", "pelo", "pelos", "por", "porque", "pra", "que", "quem", "se", "sem",
   "ser", "seu", "seus", "sua", "suas", "tambem", "te", "tem", "tinha", "to", "tu", "um", "uma", "voce",
-  "voces", "texto", "escrita", "coisa", "aqui", "agora", "hoje", "ontem", "amanha", "gente",
+  "voces", "texto", "escrita", "coisa", "aqui", "agora", "hoje", "ontem", "amanha", "gente", "quando",
   "tipo", "sobre", "fazer", "feito", "tenho", "tava", "estou", "quero", "queria", "vai",
   "vou", "fica", "ficou", "so", "mim", "meus", "minhas", "dele", "dela", "principalmente",
   "certamente", "proprio", "propria", "proprios", "proprias", "jeito", "modo", "passo", "frase",
@@ -2637,12 +2715,21 @@ function keywordRoot(token) {
   return token.length <= 5 ? token : token.slice(0, 5);
 }
 
+const SCENE_PRIORITY_TOKENS = new Set([
+  "amazonia", "antartida", "bairro", "barro", "calcada", "cozinha", "corpo", "favela",
+  "fogao", "gas", "irma", "irmao", "janela", "justica", "laje", "mao", "mercado",
+  "muro", "olhar", "olhos", "paredao", "periferia", "porta", "praia", "praca",
+  "quarto", "quintal", "rio", "rosto", "rua", "sala", "silencio", "tecnica",
+  "territorio", "varal", "viela", "voz", "ausencia"
+]);
+
 function scoreKeywordToken(token, contextWeight = 1) {
   const lengthBonus = Math.min(2, Math.max(0, token.length - 5) * 0.2);
   const symbolicBonus = /(?:dade|mento|cao|coes|gem|ario|arios|eiro|eira|ismo|ura|ez|al|or|orio)$/.test(token)
     ? 0.8
     : 0;
-  return contextWeight + lengthBonus + symbolicBonus;
+  const sceneBonus = SCENE_PRIORITY_TOKENS.has(token) ? 1.15 : 0;
+  return contextWeight + lengthBonus + symbolicBonus + sceneBonus;
 }
 
 function tokenizeForKeywords(text) {
@@ -2686,6 +2773,28 @@ function scoreJourneyTurnWeight(turn, index, total) {
   return Math.max(0.2, weight);
 }
 
+function resolveConcreteSceneAnchorText() {
+  const concreteTurns = userTurnsByStepKeys(["cena", "concreto"])
+    .filter((turn) => turn.meta?.validation !== "repair_needed")
+    .map((turn) => normalizeInlineText(turn.text))
+    .filter(Boolean);
+
+  const bestConcrete = concreteTurns
+    .map((text) => ({ text, scene: detectSceneSignals(text) }))
+    .sort((a, b) => b.scene.score - a.scene.score || b.scene.wordCount - a.scene.wordCount)[0];
+
+  if (bestConcrete?.text) {
+    return extractConcreteSceneAnchor(bestConcrete.text);
+  }
+
+  const finalAnchor = normalizeInlineText(resolveFinalAnchorText());
+  if (detectSceneSignals(finalAnchor).score >= 2) {
+    return extractConcreteSceneAnchor(finalAnchor);
+  }
+
+  return "";
+}
+
 function resolveKeywordSources() {
   const turns = userTurnsWithMeta();
   const total = turns.length || 1;
@@ -2698,6 +2807,11 @@ function resolveKeywordSources() {
 
   if (state.centerSemanticTail) {
     sources.push({ text: normalizeInlineText(state.centerSemanticTail), weight: 3.6 });
+  }
+
+  const concreteAnchor = resolveConcreteSceneAnchorText();
+  if (concreteAnchor) {
+    sources.push({ text: concreteAnchor, weight: 3.4 });
   }
 
   const finalAnchor = resolveFinalAnchorText();
@@ -2741,6 +2855,7 @@ function extractJourneyKeywords() {
 function buildJourneySynthesis(summary, keywords) {
   const trackName = (TRACKS[state.trackKey]?.name || "jornada").replace(/\s*\([^)]*\)\s*/g, "").trim();
   const focus = listToNaturalLanguage((keywords || []).slice(0, 3));
+  const sceneAnchor = clipText(summary.sceneAnchor || resolveConcreteSceneAnchorText(), 120);
   const centerMap = {
     pergunta: "uma pergunta que pediu desdobramento",
     afirmacao: "uma afirmacao que pediu sustento",
@@ -2768,6 +2883,10 @@ function buildJourneySynthesis(summary, keywords) {
     lines.push("Do primeiro impulso ao fechamento, a escrita ganhou mais nitidez e recorte.");
   } else {
     lines.push("Ao longo da conversa, a ideia foi se deixando ver com mais clareza.");
+  }
+
+  if (sceneAnchor) {
+    lines.push(`Na cena, ficou isto: "${sceneAnchor}".`);
   }
 
   if (summary.emergentPhrase) {
@@ -2870,17 +2989,17 @@ function buildJourneyRubric(summary) {
 
 function buildDoneChecklist(summary, rubric) {
   const finalText = resolveFinalAnchorText() || summary.lastText || "";
-  const priorText = userTurnsWithMeta()
-    .filter((turn) => !["frase_final", "forma_final"].includes(turn.meta?.stepKey))
-    .slice(-1)[0]?.text || "";
-  const finalDensity = lexicalDensity(finalText);
-  const priorDensity = lexicalDensity(priorText);
+  const finalAccepted = userTurnsByStepKeys(["frase_final", "forma_final"])
+    .some((turn) => turn.meta?.validation === "ok" && normalizeInlineText(turn.text) === normalizeInlineText(finalText));
+  const finalOverlap = keywordOverlapCount(finalText, collectSemanticAnchorTokens());
 
   return {
     fraseFinalMaisForte: {
-      ok: isStrongFinalLine(finalText) && (!priorText || finalDensity >= Math.max(0, priorDensity - 0.02)),
-      note: isStrongFinalLine(finalText)
+      ok: isStrongFinalLine(finalText) && (finalAccepted || finalOverlap >= 1),
+      note: isStrongFinalLine(finalText) && (finalAccepted || finalOverlap >= 1)
         ? "O fechamento esta compacto o bastante para funcionar como frase que fica."
+        : isStrongFinalLine(finalText)
+          ? "A linha final ficou compacta, mas ainda precisa se ligar melhor ao percurso anterior."
         : "A linha final ainda pede mais lapidacao para ficar mais forte que a resposta espontanea anterior."
     },
     naoAbandonouPasso: {
@@ -2912,9 +3031,24 @@ function formatDoneChecklistForTranscript(doneChecklist) {
     .join("\n");
 }
 
-function buildFallbackLiteraryGift(keywords) {
+function buildFallbackLiteraryGift(payloadOrKeywords) {
+  const payload = Array.isArray(payloadOrKeywords)
+    ? { keywords: payloadOrKeywords }
+    : (payloadOrKeywords || {});
+  const keywords = payload.keywords || [];
   const seed = keywords[0] || "palavra";
   const companion = keywords[1] || "eco";
+  const sceneAnchor = clipText(payload.sceneAnchor || resolveConcreteSceneAnchorText(), 110);
+  const finalAnchor = clipText(payload.lastText || resolveFinalAnchorText(), 110);
+  let fragment = `Guarde ${seed}. Quando a trilha parece terminar, ela ainda conversa com ${companion}. O que ficou vivo aqui talvez seja o comeco de outra frase.`;
+
+  if (sceneAnchor && finalAnchor && sceneAnchor !== finalAnchor) {
+    fragment = `Guarde esta imagem: "${sceneAnchor}". E guarde tambem esta linha: "${finalAnchor}". Entre ${seed} e ${companion}, ainda ha uma frase pedindo continuidade.`;
+  } else if (sceneAnchor) {
+    fragment = `Guarde esta imagem: "${sceneAnchor}". Entre ${seed} e ${companion}, ela ainda pede outra frase.`;
+  } else if (finalAnchor) {
+    fragment = `Guarde esta linha: "${finalAnchor}". Entre ${seed} e ${companion}, ela ainda pede outra frase.`;
+  }
   return {
     source: "fallback",
     seed,
@@ -2926,13 +3060,31 @@ function buildFallbackLiteraryGift(keywords) {
   };
 }
 
+function enrichFallbackLiteraryGift(gift, payload) {
+  const base = { ...(gift || {}) };
+  const sceneAnchor = clipText(payload?.sceneAnchor || resolveConcreteSceneAnchorText(), 110);
+  const finalAnchor = clipText(payload?.lastText || resolveFinalAnchorText(), 110);
+  const seed = base.seed || payload?.keywords?.[0] || "palavra";
+  const companion = payload?.keywords?.[1] || (base.matchedKeywords || [])[1] || "eco";
+
+  if (sceneAnchor && finalAnchor && sceneAnchor !== finalAnchor) {
+    base.fragment = `Guarde esta imagem: "${sceneAnchor}". E guarde tambem esta linha: "${finalAnchor}". Entre ${seed} e ${companion}, ainda ha uma frase pedindo continuidade.`;
+  } else if (sceneAnchor) {
+    base.fragment = `Guarde esta imagem: "${sceneAnchor}". Entre ${seed} e ${companion}, ela ainda pede outra frase.`;
+  } else if (finalAnchor) {
+    base.fragment = `Guarde esta linha: "${finalAnchor}". Entre ${seed} e ${companion}, ela ainda pede outra frase.`;
+  }
+
+  return base;
+}
+
 function normalizeGiftResponse(rawGift, payload) {
   if (!rawGift || !rawGift.fragment) {
-    return buildFallbackLiteraryGift(payload.keywords || []);
+    return enrichFallbackLiteraryGift(buildFallbackLiteraryGift(payload.keywords || []), payload);
   }
 
   const fragment = clipMultilineText(rawGift.fragment, 320);
-  if (!fragment) return buildFallbackLiteraryGift(payload.keywords || []);
+  if (!fragment) return enrichFallbackLiteraryGift(buildFallbackLiteraryGift(payload.keywords || []), payload);
 
   return {
     source: rawGift.source || "poems_sheet",
@@ -2950,7 +3102,7 @@ function normalizeGiftResponse(rawGift, payload) {
 }
 
 function buildGiftLookupFallback(payload, response) {
-  const gift = buildFallbackLiteraryGift(payload.keywords || []);
+  const gift = enrichFallbackLiteraryGift(buildFallbackLiteraryGift(payload.keywords || []), payload);
   const reason = response?.error || "gift_lookup_unavailable";
   return {
     ...gift,
@@ -2958,8 +3110,16 @@ function buildGiftLookupFallback(payload, response) {
     intro:
       reason === "timeout"
         ? "A biblioteca poética demorou mais do que devia para responder. IZA guardou o seu fechamento e te deixa este eco por agora."
+        : reason === "rpc_timeout"
+          ? "A biblioteca poética demorou mais do que devia para responder neste ambiente. IZA guardou o seu fechamento e te deixa este eco por agora."
         : reason === "network"
           ? "A ligação com a biblioteca poética falhou neste momento. IZA guardou o seu percurso e te entrega este eco por agora."
+          : reason === "rpc_failure"
+            ? "A ligação interna com a biblioteca poética falhou neste momento. IZA guardou o seu percurso e te entrega este eco por agora."
+            : reason === "query_too_long"
+              ? "O pedido à biblioteca poética ficou maior do que o canal suportou. IZA guardou o seu percurso e te entrega este eco por agora."
+              : reason === "dom_unavailable"
+                ? "Nao consegui abrir o canal do presente literario nesta tela. IZA guardou o seu percurso e te entrega este eco por agora."
           : "A biblioteca poética encontrou um desvio na busca. IZA guardou o seu percurso e te entrega este eco por agora."
   };
 }
@@ -3023,7 +3183,8 @@ function buildFinalSummary() {
     firstText: normalizeInlineText(userTurns[0]?.text),
     lastText: resolveFinalAnchorText(),
     emergentPhrase: extractEmergentPhrase(),
-    centerSemanticTail: normalizeInlineText(state.centerSemanticTail)
+    centerSemanticTail: normalizeInlineText(state.centerSemanticTail),
+    sceneAnchor: resolveConcreteSceneAnchorText()
   };
   const keywords = extractJourneyKeywords();
   const journeySynthesis = buildJourneySynthesis(base, keywords);
@@ -3108,7 +3269,7 @@ function renderLiteraryGift(payload) {
     `;
   }
 
-  const gift = payload.literaryGift || buildFallbackLiteraryGift(payload.keywords || []);
+  const gift = payload.literaryGift || enrichFallbackLiteraryGift(buildFallbackLiteraryGift(payload.keywords || []), payload);
   const credit = [gift.author, gift.title].filter(Boolean).join(" - ");
 
   return `
@@ -3148,6 +3309,7 @@ function buildGiftJourneyContext(payload) {
   const sections = [
     state.finalDraft || "",
     state.centerSemanticTail || "",
+    payload.sceneAnchor || "",
     payload.emergentPhrase || "",
     userTexts.slice(0, Math.min(3, userTexts.length)).join(" || "),
     userTexts.slice(middleStart, middleStart + 4).join(" || "),
@@ -3166,26 +3328,100 @@ function buildGiftJourneyContext(payload) {
   return clipText(unique.join(" || "), 1600);
 }
 
-function requestLiteraryGift(payload) {
+function buildGiftLookupRequestData(payload, compact = false) {
+  const maxKeywords = compact ? 5 : 8;
+  const maxSummary = compact ? 180 : 280;
+  const maxSeedText = compact ? 240 : 520;
+  const maxJourneyText = compact ? 720 : 1600;
+
+  return {
+    keywords: (payload.keywords || []).slice(0, maxKeywords),
+    summary: clipText(payload.journeySynthesis, maxSummary),
+    seedText: clipText(
+      [payload.emergentPhrase, payload.lastText, state.finalDraft].filter(Boolean).join(" || "),
+      maxSeedText
+    ),
+    journeyText: clipText(buildGiftJourneyContext(payload), maxJourneyText),
+    trackKey: state.trackKey || "",
+    presenceKey: state.presenceKey || ""
+  };
+}
+
+function canUseAppsScriptGiftLookup() {
+  return !!(
+    window.google &&
+    window.google.script &&
+    window.google.script.run &&
+    typeof window.google.script.run.withSuccessHandler === "function" &&
+    typeof window.google.script.run.withFailureHandler === "function"
+  );
+}
+
+function requestLiteraryGiftViaAppsScript(requestData) {
   return new Promise((resolve) => {
-    const journeyText = buildGiftJourneyContext(payload);
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const timer = window.setTimeout(() => {
+      finish({ ok: false, error: "rpc_timeout" });
+    }, GIFT_LOOKUP_TIMEOUT_MS);
+
+    const onDone = (result) => {
+      window.clearTimeout(timer);
+      finish(result || { ok: false, error: "empty_response" });
+    };
+
+    const onFail = (error) => {
+      window.clearTimeout(timer);
+      finish({
+        ok: false,
+        error: "rpc_failure",
+        message: String(error?.message || error || "rpc_failure")
+      });
+    };
+
+    try {
+      window.google.script.run
+        .withSuccessHandler(onDone)
+        .withFailureHandler(onFail)
+        .lookupLiteraryGift(requestData);
+    } catch (error) {
+      onFail(error);
+    }
+  });
+}
+
+function requestLiteraryGiftViaJsonp(requestData) {
+  return new Promise((resolve) => {
     const callbackName =
       "__izaGiftCb_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
     const params = new URLSearchParams({
       action: "gift",
       callback: callbackName,
-      keywords: (payload.keywords || []).slice(0, 8).join("|"),
-      summary: clipText(payload.journeySynthesis, 280),
-      seedText: clipText(
-        [payload.emergentPhrase, payload.lastText, state.finalDraft].filter(Boolean).join(" || "),
-        520
-      ),
-      journeyText: journeyText,
-      trackKey: state.trackKey || "",
-      presenceKey: state.presenceKey || ""
+      keywords: (requestData.keywords || []).join("|"),
+      summary: requestData.summary || "",
+      seedText: requestData.seedText || "",
+      journeyText: requestData.journeyText || "",
+      trackKey: requestData.trackKey || "",
+      presenceKey: requestData.presenceKey || ""
     });
+    const src = `${WEBAPP_URL}?${params.toString()}`;
+
+    if (src.length > 1900) {
+      resolve({
+        ok: false,
+        error: "query_too_long",
+        diagnostics: { transport: "jsonp", urlLength: src.length }
+      });
+      return;
+    }
 
     const script = document.createElement("script");
+    const mountNode = document.body || document.head || document.documentElement;
     let timer = null;
 
     const cleanup = () => {
@@ -3205,18 +3441,63 @@ function requestLiteraryGift(payload) {
 
     timer = window.setTimeout(() => {
       cleanup();
-      resolve({ ok: false, error: "timeout" });
+      resolve({ ok: false, error: "timeout", diagnostics: { transport: "jsonp" } });
     }, GIFT_LOOKUP_TIMEOUT_MS);
 
-    script.src = `${WEBAPP_URL}?${params.toString()}`;
+    script.src = src;
     script.async = true;
     script.onerror = () => {
       cleanup();
-      resolve({ ok: false, error: "network" });
+      resolve({ ok: false, error: "network", diagnostics: { transport: "jsonp" } });
     };
 
-    document.body.appendChild(script);
+    if (!mountNode) {
+      cleanup();
+      resolve({ ok: false, error: "dom_unavailable", diagnostics: { transport: "jsonp" } });
+      return;
+    }
+
+    mountNode.appendChild(script);
   });
+}
+
+async function requestLiteraryGift(payload) {
+  const primaryRequest = buildGiftLookupRequestData(payload, false);
+
+  if (canUseAppsScriptGiftLookup()) {
+    const rpcResponse = await requestLiteraryGiftViaAppsScript(primaryRequest);
+    if (rpcResponse?.ok !== false) {
+      return {
+        ...rpcResponse,
+        diagnostics: {
+          ...(rpcResponse?.diagnostics || {}),
+          transport: "apps_script_rpc"
+        }
+      };
+    }
+  }
+
+  let jsonpResponse = await requestLiteraryGiftViaJsonp(primaryRequest);
+  if (jsonpResponse?.ok !== false) {
+    return jsonpResponse;
+  }
+
+  if (["network", "timeout", "empty_response", "query_too_long", "dom_unavailable", "rpc_failure", "rpc_timeout"].includes(jsonpResponse?.error)) {
+    const compactRequest = buildGiftLookupRequestData(payload, true);
+    const compactResponse = await requestLiteraryGiftViaJsonp(compactRequest);
+    if (compactResponse?.ok !== false) {
+      return {
+        ...compactResponse,
+        diagnostics: {
+          ...(compactResponse?.diagnostics || {}),
+          retry: "compact_jsonp"
+        }
+      };
+    }
+    return compactResponse;
+  }
+
+  return jsonpResponse;
 }
 
 function syncLiteraryGiftForFinal() {
