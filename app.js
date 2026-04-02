@@ -23,6 +23,7 @@
 
 const WEBAPP_URL =
   "https://script.google.com/macros/s/AKfycbyyI1PH5SXz4R6cn1Zzl1NPNQgMK7eI_KQRBiFa_wQX9Xg6-ZrIO53r0xi6B1ciTBc/exec";
+const APP_VARIANT = "iza0.2";
 
 const MIN_INSPIRED_ROUNDS = 7;
 const GIFT_LOOKUP_TIMEOUT_MS = 45000;
@@ -34,6 +35,13 @@ const state = {
   municipio: "",
   estadoUF: "", // "BA", "MG", ... ou "INTERNACIONAL"
   origem: "", // "Oficina Cordel 2.0" | "Particular"
+  participantId: "",
+  checkinUserId: "",
+  checkinMatchStatus: "",
+  checkinMatchMethod: "",
+  teacherGroup: "",
+  checkinLookupStatus: "idle", // idle|loading|matched|unmatched|ambiguous|error
+  checkinLookupMessage: "",
 
   presenceKey: null, // "A"|"B"|"C"|"D"|"H"
   presence: null,
@@ -3419,6 +3427,158 @@ function requestLiteraryGiftViaAppsScript(requestData) {
   });
 }
 
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function clearResolvedCheckinIdentity(nextEmail = "") {
+  state.email = String(nextEmail || "").trim();
+  state.name = "";
+  state.municipio = "";
+  state.estadoUF = "";
+  state.origem = "";
+  state.participantId = "";
+  state.checkinUserId = "";
+  state.checkinMatchStatus = "";
+  state.checkinMatchMethod = "";
+  state.teacherGroup = "";
+  state.checkinLookupStatus = "idle";
+  state.checkinLookupMessage = "";
+}
+
+function applyResolvedCheckinIdentity(identity) {
+  state.name = String(identity?.name || "").trim();
+  state.email = String(identity?.email || state.email || "").trim();
+  state.municipio = String(identity?.municipio || "").trim();
+  state.estadoUF = normalizeUFOrInternational(identity?.estado || "");
+  state.origem = normalizeOrigem(identity?.origem || "");
+  state.participantId = String(identity?.participantId || "").trim();
+  state.checkinUserId = String(identity?.checkinUserId || "").trim();
+  state.checkinMatchStatus = String(identity?.status || "matched").trim() || "matched";
+  state.checkinMatchMethod = String(identity?.matchMethod || "email").trim() || "email";
+  state.teacherGroup = String(identity?.teacherGroup || "").trim();
+  state.checkinLookupStatus = "matched";
+  state.checkinLookupMessage = "";
+}
+
+function renderWelcomeIdentityStatus() {
+  const status = String(state.checkinLookupStatus || "idle");
+
+  if (status === "loading") {
+    return `<div class="message iza-message">Verificando seu e-mail no check-in...</div>`;
+  }
+
+  if (status === "matched") {
+    const details = [
+      state.municipio ? `Município: ${escapeHtml(state.municipio)}` : "",
+      state.estadoUF ? `Estado: ${escapeHtml(state.estadoUF)}` : "",
+      state.teacherGroup ? `Turma/oficina: ${escapeHtml(state.teacherGroup)}` : ""
+    ].filter(Boolean);
+
+    return `
+      <div class="message iza-message">
+        <strong>Cadastro confirmado.</strong><br>
+        ${escapeHtml(state.name || "Participante")}<br>
+        <span class="iza-copy iza-copy--soft">${escapeHtml(state.email)}</span>
+        ${details.length ? `<div class="iza-copy iza-copy--soft">${details.join(" · ")}</div>` : ""}
+      </div>
+    `;
+  }
+
+  if (status === "unmatched") {
+    return `
+      <div class="message">
+        Não encontrei esse e-mail no check-in. Nesta fase, o acesso ao IZA 0.2 está liberado apenas para e-mails já registrados.
+      </div>
+    `;
+  }
+
+  if (status === "ambiguous") {
+    return `
+      <div class="message">
+        Encontrei mais de um cadastro com esse e-mail no check-in. Vale revisar esse registro antes de seguir.
+      </div>
+    `;
+  }
+
+  if (status === "error") {
+    return `
+      <div class="message">
+        Não consegui consultar o check-in agora. ${escapeHtml(state.checkinLookupMessage || "Tente novamente em instantes.")}
+      </div>
+    `;
+  }
+
+  return `
+    <div class="iza-copy iza-copy--soft">
+      Digite o e-mail usado no check-in para liberar a jornada e trazer seu nome automaticamente.
+    </div>
+  `;
+}
+
+function updateWelcomeIdentityUI() {
+  const identityNode = el("welcomeIdentity");
+  if (identityNode) identityNode.innerHTML = renderWelcomeIdentityStatus();
+
+  const verifyBtn = el("verifyCheckinBtn");
+  if (verifyBtn) {
+    verifyBtn.disabled = state.checkinLookupStatus === "loading" || !isValidEmail(el("userEmail")?.value || "");
+    verifyBtn.textContent = state.checkinLookupStatus === "loading" ? "Verificando..." : "Verificar e-mail";
+  }
+
+  const startBtn = el("startJourneyBtn");
+  if (startBtn) {
+    startBtn.disabled = !(state.checkinLookupStatus === "matched" && state.name && state.participantId && state.checkinUserId);
+  }
+}
+
+function requestCheckinIdentityViaJsonp(email) {
+  return new Promise((resolve) => {
+    const callbackName =
+      "__izaCheckinCb_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+    const params = new URLSearchParams({
+      action: "checkin_lookup",
+      callback: callbackName,
+      email: String(email || "").trim()
+    });
+    const script = document.createElement("script");
+    const mountNode = document.body || document.head || document.documentElement;
+    let timer = null;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      try {
+        delete window[callbackName];
+      } catch (_) {
+        window[callbackName] = undefined;
+      }
+    };
+
+    window[callbackName] = (data) => {
+      cleanup();
+      resolve(data || { ok: false, status: "error", error: "empty_response" });
+    };
+
+    script.onerror = () => {
+      cleanup();
+      resolve({ ok: false, status: "error", error: "network" });
+    };
+
+    timer = setTimeout(() => {
+      cleanup();
+      resolve({ ok: false, status: "error", error: "timeout" });
+    }, 15000);
+
+    script.src = `${WEBAPP_URL}?${params.toString()}`;
+    mountNode.appendChild(script);
+  });
+}
+
 function requestLiteraryGiftViaJsonp(requestData) {
   return new Promise((resolve) => {
     const callbackName =
@@ -3704,8 +3864,13 @@ function showFinalizeScreen() {
 // -------------------- REGISTER (3 etapas) --------------------
 function buildRegisterBasePayload(stage) {
   return {
+    appVariant: APP_VARIANT,
     sessionId: state.sessionId,
     stage, // "init" | "choice" | "final"
+    participantId: state.participantId || "",
+    checkinUserId: state.checkinUserId || "",
+    checkinMatchStatus: state.checkinMatchStatus || "",
+    checkinMatchMethod: state.checkinMatchMethod || "",
     escritor: state.name,
     name: state.name,
     email: state.email,
@@ -3715,6 +3880,9 @@ function buildRegisterBasePayload(stage) {
     stateUF: state.estadoUF,
     origem: state.origem,
     source: state.origem,
+    teacherGroup: state.teacherGroup || "",
+    cohort: state.teacherGroup || "",
+    workshop: state.teacherGroup || "",
 
     trilha: state.trackKey || "",
     trackKey: state.trackKey || "",
@@ -4056,12 +4224,6 @@ function setWelcomeError(message) {
 }
 
 function renderWelcomeScreen(payload, fromHistory = false) {
-  const ufOptions = [
-    `<option value="">Selecione…</option>`,
-    ...BR_UFS.map((uf) => `<option value="${uf}">${uf}</option>`),
-    `<option value="INTERNACIONAL">INTERNACIONAL</option>`
-  ].join("");
-
   render(
     renderCardShell(`
       <div class="iza-top">
@@ -4080,45 +4242,48 @@ function renderWelcomeScreen(payload, fromHistory = false) {
       </p>
 
       <p class="iza-copy iza-copy--soft">
-        Antes da jornada, deixe seus dados e diga de onde você chega.
+        Nesta fase, a entrada do IZA 0.2 está liberada apenas para e-mails já registrados no check-in.
       </p>
 
       <div id="welcomeError"></div>
 
-      <input type="text" id="userName" class="input-area" placeholder="Seu nome" value="${escapeHtml(state.name)}">
       <input type="email" id="userEmail" class="input-area" placeholder="Seu e-mail" value="${escapeHtml(state.email)}">
 
-      <input type="text" id="userMunicipio" class="input-area" placeholder="Município (ex.: Salvador)" value="${escapeHtml(state.municipio)}">
-
-      <select id="userEstado" class="iza-field">
-        ${ufOptions}
-      </select>
-
-      <div class="iza-label-group">
-        <div class="iza-label-group__title">De onde você vem</div>
-        <div class="iza-radio">
-          <label><input type="radio" name="origem" value="Oficina Cordel 2.0"> Oficina Cordel 2.0</label>
-          <label><input type="radio" name="origem" value="Particular"> Particular</label>
-        </div>
+      <div class="iza-actions iza-actions--compact">
+        <button class="button" id="verifyCheckinBtn" onclick="verifyCheckinEmail()">Verificar e-mail</button>
       </div>
 
-      <button class="button" onclick="validateStart()">Começar jornada</button>
+      <div id="welcomeIdentity"></div>
+
+      <button class="button" id="startJourneyBtn" onclick="validateStart()" disabled>Começar jornada</button>
 
       ${renderHistoryNav("")}
     `)
   );
 
-  // set estado + origem com estado atual
-  const sel = document.getElementById("userEstado");
-  if (sel) sel.value = state.estadoUF || "";
+  const emailInput = document.getElementById("userEmail");
+  if (emailInput) {
+    emailInput.addEventListener("input", () => {
+      const typedEmail = emailInput.value.trim();
+      if (normalizeEmail(typedEmail) !== normalizeEmail(state.email)) {
+        clearResolvedCheckinIdentity(typedEmail);
+        saveStateToLocal();
+      }
+      setWelcomeError("");
+      updateWelcomeIdentityUI();
+    });
 
-  const radios = document.querySelectorAll('input[name="origem"]');
-  radios.forEach((r) => {
-    if (String(r.value) === String(state.origem)) r.checked = true;
-  });
+    emailInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        verifyCheckinEmail();
+      }
+    });
+  }
 
   mountFadeIn();
   bindHistoryNavHandlers();
+  updateWelcomeIdentityUI();
 }
 
 function showWelcome() {
@@ -4142,32 +4307,62 @@ function showWelcome() {
 }
 
 window.validateStart = function () {
-  state.name = el("userName").value.trim();
-  state.email = el("userEmail").value.trim();
+  state.email = el("userEmail")?.value.trim() || "";
 
-  state.municipio = (el("userMunicipio")?.value || "").trim();
-  state.estadoUF = normalizeUFOrInternational(el("userEstado")?.value || "");
-  const origemPicked = document.querySelector('input[name="origem"]:checked')?.value || "";
-  state.origem = normalizeOrigem(origemPicked);
+  if (!isValidEmail(state.email)) {
+    setWelcomeError("Digite um e-mail válido para consultar o check-in.");
+    updateWelcomeIdentityUI();
+    return;
+  }
 
-  const missing = [];
-  if (!state.name) missing.push("nome");
-  if (!state.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email)) missing.push("e-mail válido");
-  if (!state.municipio) missing.push("município");
-  if (!state.estadoUF) missing.push("estado");
-  if (!state.origem) missing.push("origem");
-
-  if (missing.length) {
-    setWelcomeError(`Falta preencher: ${missing.join(", ")}.`);
+  if (state.checkinLookupStatus !== "matched" || !state.name || !state.participantId || !state.checkinUserId) {
+    setWelcomeError("Verifique um e-mail já registrado no check-in antes de começar.");
+    updateWelcomeIdentityUI();
     return;
   }
 
   setWelcomeError("");
-
-  // registro init (não trava)
   safeRegisterInit();
-
   showPresenceTest();
+};
+
+window.verifyCheckinEmail = async function () {
+  const typedEmail = el("userEmail")?.value.trim() || "";
+
+  if (!isValidEmail(typedEmail)) {
+    setWelcomeError("Digite um e-mail válido para consultar o check-in.");
+    clearResolvedCheckinIdentity(typedEmail);
+    updateWelcomeIdentityUI();
+    return;
+  }
+
+  clearResolvedCheckinIdentity(typedEmail);
+  state.checkinLookupStatus = "loading";
+  state.checkinLookupMessage = "";
+  setWelcomeError("");
+  updateWelcomeIdentityUI();
+
+  const response = await requestCheckinIdentityViaJsonp(typedEmail);
+
+  if (response?.ok && response?.status === "matched") {
+    applyResolvedCheckinIdentity(response);
+    saveStateToLocal();
+    updateWelcomeIdentityUI();
+    const startBtn = el("startJourneyBtn");
+    if (startBtn) startBtn.focus();
+    return;
+  }
+
+  clearResolvedCheckinIdentity(typedEmail);
+  state.checkinLookupStatus =
+    response?.status === "ambiguous"
+      ? "ambiguous"
+      : response?.status === "unmatched"
+        ? "unmatched"
+        : "error";
+  state.checkinLookupMessage = String(response?.error || "");
+  saveStateToLocal();
+  updateWelcomeIdentityUI();
 };
 
 // init

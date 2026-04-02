@@ -1,9 +1,17 @@
 var RECORD_HEADERS = [
   "DATA/HORA",
+  "APP_VARIANT",
+  "SESSION_ID",
+  "PARTICIPANT_ID",
+  "CHECKIN_USER_ID",
+  "CHECKIN_MATCH_STATUS",
+  "CHECKIN_MATCH_METHOD",
   "ESCRITOR/A",
   "EMAIL",
   "MUNICIPIO",
   "ESTADO",
+  "ORIGEM",
+  "TEACHER_GROUP",
   "TRILHA",
   "PERSONALIDADE DO BOT",
   "REGISTRO DOS ESCRITOS",
@@ -94,6 +102,9 @@ var EXCERPT_SCORE_MARGIN = 3;
 var DEFAULT_RECORDS_SPREADSHEET_ID = "1w13EVysAWLuF5RgMLUcUHEL0cJcuD9fryJbX3glZ8Ac";
 var DEFAULT_POEMS_SPREADSHEET_ID = "1ZWLSI39VuXrmUoRIojdchlqZUdV5pvdqzqhzoGmRds0";
 var DEFAULT_POEMS_SHEET_NAME = "POEMS";
+var DEFAULT_CHECKIN_SPREADSHEET_ID = "130CvfT6mwv0gzYQgmrylg4Q0T5xRI918dms8A4yzqO8";
+var DEFAULT_CHECKIN_SHEET_NAME = "USERS";
+var DEFAULT_PROJECT_VARIANT = "iza0.2";
 
 function claimPoemShardContext_() {
   var props = PropertiesService.getScriptProperties();
@@ -142,6 +153,9 @@ function doGet(e) {
   if (action === "gift") {
     return handleGiftLookup_(e);
   }
+  if (action === "checkin_lookup") {
+    return handleCheckinLookup_(e);
+  }
 
   return ContentService
     .createTextOutput("IZA webapp ok")
@@ -157,14 +171,16 @@ function doPost(e) {
 
     var sessionId = String(data.sessionId || "").trim();
     var stage = String(data.stage || "").trim().toLowerCase();
+    var appVariant = String(data.appVariant || DEFAULT_PROJECT_VARIANT).trim() || DEFAULT_PROJECT_VARIANT;
 
-    var escritor = data.escritor || data.name || "";
-    var email = data.email || "";
-    var municipio = data.municipio || data.city || "";
+    var escritorRaw = String(data.escritor || data.name || "").trim();
+    var email = String(data.email || "").trim();
+    var municipioRaw = String(data.municipio || data.city || "").trim();
     var estadoRaw = data.estado || data.state || data.stateUF || "";
     var origemRaw = data.origem || data.source || "";
-    var trilha = data.trilha || data.trackKey || "";
-    var personalidade = data.personalidade || data.presenceName || data.presenceKey || "";
+    var teacherGroup = String(data.teacherGroup || data.cohort || data.workshop || "").trim();
+    var trilha = String(data.trilha || data.trackKey || "").trim();
+    var personalidade = String(data.personalidade || data.presenceName || data.presenceKey || "").trim();
 
     var escritos =
       data.escritos ||
@@ -186,42 +202,69 @@ function doPost(e) {
       ? data.literaryGiftMatched.join(", ")
       : String(data.literaryGiftMatched || "");
 
-    var estadoComOrigem = composeEstadoWithOrigem_(estadoRaw, origemRaw);
+    var checkinMatch = resolveCheckinMatch_({
+      name: escritorRaw,
+      email: email,
+      municipio: municipioRaw,
+      estado: estadoRaw,
+      origem: origemRaw,
+      cohort: teacherGroup
+    });
+
+    var escritor = String(escritorRaw || checkinMatch.name || "").trim();
+    email = String(email || checkinMatch.email || "").trim();
+    var municipio = String(municipioRaw || checkinMatch.city || "").trim();
+    var estadoNorm = normalizeUFOrInternational_(estadoRaw || checkinMatch.estado || "");
+    var origemNorm = normalizeOrigem_(origemRaw || checkinMatch.origem || "");
+    teacherGroup = String(teacherGroup || checkinMatch.teacherGroup || "").trim();
+    var participantMatch = {
+      status: String(data.checkinMatchStatus || checkinMatch.status || "unmatched").trim() || "unmatched",
+      method: String(data.checkinMatchMethod || checkinMatch.method || "none").trim() || "none",
+      checkinUserId: String(data.checkinUserId || checkinMatch.checkinUserId || "").trim()
+    };
+    var participantId = String(data.participantId || buildParticipantId_({
+      name: escritor,
+      email: email,
+      municipio: municipio,
+      estado: estadoNorm,
+      origem: origemNorm,
+      checkinMatch: participantMatch
+    })).trim();
+
+    var recordsBase = {
+      appVariant: appVariant,
+      sessionId: sessionId,
+      participantId: participantId,
+      checkinUserId: participantMatch.checkinUserId,
+      matchStatus: participantMatch.status,
+      matchMethod: participantMatch.method,
+      escritor: escritor,
+      email: email,
+      municipio: municipio,
+      estado: estadoNorm,
+      origem: origemNorm,
+      teacherGroup: teacherGroup,
+      trilha: trilha,
+      personalidade: personalidade
+    };
+
     var row = -1;
 
     if (stage === "init") {
-      appendInitRow_(sheet, headerMap, {
-        sessionId: sessionId,
-        escritor: escritor,
-        email: email,
-        municipio: municipio,
-        estadoComOrigem: estadoComOrigem
-      });
-
+      appendInitRow_(sheet, headerMap, recordsBase);
       return textResponse_("OK:init");
     }
 
     row = findRowBySessionId_(sheet, headerMap, sessionId);
     if (row === -1) {
-      appendInitRow_(sheet, headerMap, {
-        sessionId: sessionId,
-        escritor: escritor,
-        email: email,
-        municipio: municipio,
-        estadoComOrigem: estadoComOrigem,
-        fallback: true
-      });
+      var fallbackBase = {};
+      for (var baseKey in recordsBase) fallbackBase[baseKey] = recordsBase[baseKey];
+      fallbackBase.fallback = true;
+      appendInitRow_(sheet, headerMap, fallbackBase);
       row = findRowBySessionId_(sheet, headerMap, sessionId);
     }
 
-    updateCommonRowFields_(sheet, headerMap, row, {
-      escritor: escritor,
-      email: email,
-      municipio: municipio,
-      estadoComOrigem: estadoComOrigem,
-      trilha: trilha,
-      personalidade: personalidade
-    });
+    updateCommonRowFields_(sheet, headerMap, row, recordsBase);
 
     if (stage === "choice") {
       writeLog_(sheet, headerMap, row, buildClosingLog_(stage, {
@@ -317,6 +360,58 @@ function handleGiftLookup_(e) {
   return ContentService
     .createTextOutput(callback + "(" + payload + ");")
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function handleCheckinLookup_(e) {
+  var callback = sanitizeJsonpCallback_((e && e.parameter && e.parameter.callback) || "");
+  var payload = JSON.stringify(buildCheckinLookupResult_({
+    email: (e && e.parameter && e.parameter.email) || ""
+  }));
+
+  return ContentService
+    .createTextOutput(callback + "(" + payload + ");")
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function buildCheckinLookupResult_(input) {
+  var email = normalizeEmail_(input && input.email);
+  if (!email || email.indexOf("@") === -1) {
+    return {
+      ok: false,
+      status: "error",
+      error: "invalid_email"
+    };
+  }
+
+  var match = resolveCheckinMatch_({ email: email });
+  if (match.status !== "matched") {
+    return {
+      ok: false,
+      status: match.status || "unmatched",
+      error: match.status === "ambiguous" ? "ambiguous_email" : "email_not_found"
+    };
+  }
+
+  return {
+    ok: true,
+    status: "matched",
+    email: match.email || email,
+    name: match.name || "",
+    municipio: match.city || "",
+    estado: match.estado || "",
+    origem: normalizeOrigem_(match.origem || ""),
+    teacherGroup: match.teacherGroup || "",
+    checkinUserId: match.checkinUserId || "",
+    matchMethod: match.method || "email",
+    participantId: buildParticipantId_({
+      email: match.email || email,
+      name: match.name || "",
+      municipio: match.city || "",
+      estado: match.estado || "",
+      origem: match.origem || "",
+      checkinMatch: match
+    })
+  };
 }
 
 function buildGiftLookupResult_(input) {
@@ -452,6 +547,31 @@ function getRecordsSheet_() {
   return ss.getActiveSheet();
 }
 
+function getCheckinSheet_() {
+  var props = PropertiesService.getScriptProperties();
+  var spreadsheetId = String(props.getProperty("IZA_CHECKIN_SPREADSHEET_ID") || DEFAULT_CHECKIN_SPREADSHEET_ID).trim();
+  var sheetName = String(props.getProperty("IZA_CHECKIN_SHEET_NAME") || DEFAULT_CHECKIN_SHEET_NAME).trim();
+  var ss = openSpreadsheetSafely_(spreadsheetId);
+  if (!ss) return null;
+
+  if (sheetName) {
+    return (
+      ss.getSheetByName(sheetName) ||
+      ss.getSheetByName("USERS") ||
+      ss.getSheetByName("Users") ||
+      ss.getSheetByName("users") ||
+      ss.getSheets()[0]
+    );
+  }
+
+  return (
+    ss.getSheetByName("USERS") ||
+    ss.getSheetByName("Users") ||
+    ss.getSheetByName("users") ||
+    ss.getSheets()[0]
+  );
+}
+
 function getPoemsSheet_() {
   var props = PropertiesService.getScriptProperties();
   var spreadsheetId = String(props.getProperty("IZA_POEMS_SPREADSHEET_ID") || DEFAULT_POEMS_SPREADSHEET_ID).trim();
@@ -473,6 +593,36 @@ function openSpreadsheetSafely_(spreadsheetId) {
   } catch (error) {
     return null;
   }
+}
+
+function debugCheckinSheetInfo() {
+  var sheet = getCheckinSheet_();
+  if (!sheet) {
+    var missingOutput = JSON.stringify({ ok: false, error: "checkin_sheet_not_found" }, null, 2);
+    Logger.log(missingOutput);
+    return missingOutput;
+  }
+  var lastColumn = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, lastColumn).getDisplayValues()[0];
+  var output = JSON.stringify({
+    ok: true,
+    spreadsheetId: sheet.getParent().getId(),
+    sheetName: sheet.getName(),
+    headers: headers
+  }, null, 2);
+  Logger.log(output);
+  return output;
+}
+
+function debugCheckinLookupByEmail() {
+  var email = String(PropertiesService.getScriptProperties().getProperty("IZA_DEBUG_CHECKIN_EMAIL") || "").trim();
+  var output = JSON.stringify({
+    ok: !!email,
+    email: email,
+    result: email ? buildCheckinLookupResult_({ email: email }) : { ok: false, error: "missing_IZA_DEBUG_CHECKIN_EMAIL" }
+  }, null, 2);
+  Logger.log(output);
+  return output;
 }
 
 function ensureRecordHeaders_(sheet) {
@@ -509,10 +659,18 @@ function appendInitRow_(sheet, headerMap, data) {
   var width = Math.max(sheet.getLastColumn(), RECORD_HEADERS.length);
   var row = buildBlankRow_(width);
   setRowValue_(row, headerMap, "DATA/HORA", new Date());
+  setRowValue_(row, headerMap, "APP_VARIANT", data.appVariant || DEFAULT_PROJECT_VARIANT);
+  setRowValue_(row, headerMap, "SESSION_ID", data.sessionId || "");
+  setRowValue_(row, headerMap, "PARTICIPANT_ID", data.participantId || "");
+  setRowValue_(row, headerMap, "CHECKIN_USER_ID", data.checkinUserId || "");
+  setRowValue_(row, headerMap, "CHECKIN_MATCH_STATUS", data.matchStatus || "unmatched");
+  setRowValue_(row, headerMap, "CHECKIN_MATCH_METHOD", data.matchMethod || "none");
   setRowValue_(row, headerMap, "ESCRITOR/A", data.escritor || "");
   setRowValue_(row, headerMap, "EMAIL", data.email || "");
   setRowValue_(row, headerMap, "MUNICIPIO", data.municipio || "");
-  setRowValue_(row, headerMap, "ESTADO", data.estadoComOrigem || "");
+  setRowValue_(row, headerMap, "ESTADO", data.estado || "");
+  setRowValue_(row, headerMap, "ORIGEM", data.origem || "");
+  setRowValue_(row, headerMap, "TEACHER_GROUP", data.teacherGroup || "");
   setRowValue_(
     row,
     headerMap,
@@ -523,10 +681,18 @@ function appendInitRow_(sheet, headerMap, data) {
 }
 
 function updateCommonRowFields_(sheet, headerMap, row, data) {
+  if (data.appVariant) safeSetByHeader_(sheet, row, headerMap, "APP_VARIANT", data.appVariant);
+  if (data.sessionId) safeSetByHeader_(sheet, row, headerMap, "SESSION_ID", data.sessionId);
+  if (data.participantId) safeSetByHeader_(sheet, row, headerMap, "PARTICIPANT_ID", data.participantId);
+  if (typeof data.checkinUserId !== "undefined") safeSetByHeader_(sheet, row, headerMap, "CHECKIN_USER_ID", data.checkinUserId || "");
+  if (data.matchStatus) safeSetByHeader_(sheet, row, headerMap, "CHECKIN_MATCH_STATUS", data.matchStatus);
+  if (data.matchMethod) safeSetByHeader_(sheet, row, headerMap, "CHECKIN_MATCH_METHOD", data.matchMethod);
   if (data.escritor) safeSetByHeader_(sheet, row, headerMap, "ESCRITOR/A", data.escritor);
   if (data.email) safeSetByHeader_(sheet, row, headerMap, "EMAIL", data.email);
   if (data.municipio) safeSetByHeader_(sheet, row, headerMap, "MUNICIPIO", data.municipio);
-  if (data.estadoComOrigem) safeSetByHeader_(sheet, row, headerMap, "ESTADO", data.estadoComOrigem);
+  if (data.estado) safeSetByHeader_(sheet, row, headerMap, "ESTADO", data.estado);
+  if (data.origem) safeSetByHeader_(sheet, row, headerMap, "ORIGEM", data.origem);
+  if (data.teacherGroup) safeSetByHeader_(sheet, row, headerMap, "TEACHER_GROUP", data.teacherGroup);
   if (data.trilha) safeSetByHeader_(sheet, row, headerMap, "TRILHA", data.trilha);
   if (data.personalidade) safeSetByHeader_(sheet, row, headerMap, "PERSONALIDADE DO BOT", data.personalidade);
 }
@@ -535,6 +701,14 @@ function findRowBySessionId_(sheet, headerMap, sessionId) {
   if (!sessionId) return -1;
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return -1;
+
+  var sessionIndex = findHeaderIndex_(headerMap, ["SESSION_ID"]);
+  if (sessionIndex) {
+    var sessionValues = sheet.getRange(2, sessionIndex, lastRow - 1, 1).getDisplayValues();
+    for (var i = 0; i < sessionValues.length; i++) {
+      if (String(sessionValues[i][0] || "").trim() === String(sessionId)) return i + 2;
+    }
+  }
 
   var registroIndex = headerMap[normalizeHeaderKey_("REGISTRO DOS ESCRITOS")];
   if (!registroIndex) return -1;
@@ -561,6 +735,124 @@ function buildClosingLog_(stage, info) {
 function writeLog_(sheet, headerMap, row, message) {
   if (!message) return;
   safeSetByHeader_(sheet, row, headerMap, "LOG FECHAMENTO", message);
+}
+
+function resolveCheckinMatch_(input) {
+  var sheet = getCheckinSheet_();
+  if (!sheet) {
+    return { status: "unmatched", method: "none", checkinUserId: "", rowNumber: 0 };
+  }
+
+  var values = sheet.getDataRange().getDisplayValues();
+  if (!values || values.length < 2) {
+    return { status: "unmatched", method: "none", checkinUserId: "", rowNumber: 0 };
+  }
+
+  var headerMap = buildHeaderMapFromRow_(values[0]);
+  var emailNorm = normalizeEmail_(input && input.email);
+  var nameNorm = normalizePersonName_(input && input.name);
+  var cityNorm = normalizeLooseText_(input && input.municipio);
+  var cohortNorm = normalizeLooseText_(input && input.cohort);
+  var records = [];
+
+  for (var i = 1; i < values.length; i++) {
+    var row = values[i];
+    var record = extractCheckinRecord_(headerMap, row, i + 1);
+    if (record.emailNorm || record.nameNorm) records.push(record);
+  }
+
+  if (emailNorm) {
+    var emailMatches = records.filter(function (record) {
+      return record.emailNorm && record.emailNorm === emailNorm;
+    });
+    var emailResult = buildCheckinMatchResult_(emailMatches, "email");
+    if (emailResult.status !== "unmatched") return emailResult;
+  }
+
+  if (nameNorm && cohortNorm) {
+    var cohortMatches = records.filter(function (record) {
+      return record.nameNorm === nameNorm && record.cohortNorm && record.cohortNorm === cohortNorm;
+    });
+    var cohortResult = buildCheckinMatchResult_(cohortMatches, "name_cohort");
+    if (cohortResult.status !== "unmatched") return cohortResult;
+  }
+
+  if (nameNorm && cityNorm) {
+    var cityMatches = records.filter(function (record) {
+      return record.nameNorm === nameNorm && record.cityNorm && record.cityNorm === cityNorm;
+    });
+    var cityResult = buildCheckinMatchResult_(cityMatches, "name_city");
+    if (cityResult.status !== "unmatched") return cityResult;
+  }
+
+  return { status: "unmatched", method: "none", checkinUserId: "", rowNumber: 0 };
+}
+
+function extractCheckinRecord_(headerMap, row, rowNumber) {
+  var email = readRowValueByHeaders_(headerMap, row, ["EMAIL", "E-MAIL", "MAIL"]);
+  var name = readRowValueByHeaders_(headerMap, row, ["NOME", "NOME COMPLETO", "NOME DO ALUNO", "ESCRITOR/A"]);
+  var city = readRowValueByHeaders_(headerMap, row, ["MUNICIPIO", "CIDADE", "CITY"]);
+  var cohort = readRowValueByHeaders_(headerMap, row, ["OFICINAS_CORDEL", "COORTE", "COHORT", "TURMA", "OFICINA", "WORKSHOP", "GRUPO"]);
+  var estado = readRowValueByHeaders_(headerMap, row, ["ESTADO", "UF", "STATE"]);
+  var origem = readRowValueByHeaders_(headerMap, row, ["ORIGEM", "FONTE", "SOURCE", "TIPO"]);
+  var rawId = readRowValueByHeaders_(headerMap, row, ["USER_ID", "CHECKIN_USER_ID", "ID", "IDENTIFICADOR", "INSCRICAO", "MATRICULA"]);
+
+  return {
+    rowNumber: rowNumber,
+    checkinUserId: String(rawId || "").trim() || ("row-" + rowNumber),
+    email: email,
+    emailNorm: normalizeEmail_(email),
+    name: name,
+    nameNorm: normalizePersonName_(name),
+    city: city,
+    cityNorm: normalizeLooseText_(city),
+    cohort: cohort,
+    cohortNorm: normalizeLooseText_(cohort),
+    estado: estado,
+    origem: origem,
+    teacherGroup: cohort
+  };
+}
+
+function buildCheckinMatchResult_(matches, method) {
+  if (!matches || !matches.length) {
+    return { status: "unmatched", method: "none", checkinUserId: "", rowNumber: 0 };
+  }
+  if (matches.length > 1) {
+    return { status: "ambiguous", method: method, checkinUserId: "", rowNumber: 0 };
+  }
+  return {
+    status: "matched",
+    method: method,
+    checkinUserId: matches[0].checkinUserId,
+    rowNumber: matches[0].rowNumber,
+    name: matches[0].name || "",
+    email: matches[0].email || "",
+    city: matches[0].city || "",
+    estado: matches[0].estado || "",
+    origem: matches[0].origem || "",
+    teacherGroup: matches[0].teacherGroup || ""
+  };
+}
+
+function buildParticipantId_(input) {
+  var match = input && input.checkinMatch;
+  if (match && match.status === "matched" && match.checkinUserId) {
+    return buildStableId_("participant", ["checkin", match.checkinUserId]);
+  }
+
+  var emailNorm = normalizeEmail_(input && input.email);
+  if (emailNorm) {
+    return buildStableId_("participant", ["email", emailNorm]);
+  }
+
+  return buildStableId_("participant", [
+    "name",
+    normalizePersonName_(input && input.name),
+    normalizeLooseText_(input && input.municipio),
+    normalizeLooseText_(input && input.estado),
+    normalizeLooseText_(input && input.origem)
+  ]);
 }
 
 function sendFinalEmailBestEffort_(payload) {
@@ -1852,6 +2144,39 @@ function safeSetByHeader_(sheet, row, headerMap, header, value) {
   var index = headerMap[normalizeHeaderKey_(header)];
   if (!index) return;
   sheet.getRange(row, index).setValue(value);
+}
+
+function readRowValueByHeaders_(headerMap, row, headers) {
+  var index = findHeaderIndex_(headerMap, headers);
+  if (!index) return "";
+  return String(row[index - 1] || "").trim();
+}
+
+function normalizeEmail_(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizePersonName_(value) {
+  return normalizeLooseText_(value).replace(/\s+/g, " ").trim();
+}
+
+function normalizeLooseText_(value) {
+  return normalizeText_(value).replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function buildStableId_(prefix, parts) {
+  var source = (parts || []).map(function (part) {
+    return String(part || "").trim().toLowerCase();
+  }).join("|");
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, source);
+  return String(prefix || "id") + "_" + bytesToHex_(bytes).slice(0, 16);
+}
+
+function bytesToHex_(bytes) {
+  return (bytes || []).map(function (value) {
+    var hex = (value < 0 ? value + 256 : value).toString(16);
+    return hex.length === 1 ? "0" + hex : hex;
+  }).join("");
 }
 
 function textResponse_(text) {
