@@ -2083,19 +2083,27 @@ function countTextLines(text) {
 function detectSceneSignals(text) {
   const normalized = normalizeSearchText(text);
   const raw = String(text || "");
+  const wordCount = countMeaningfulWords(text);
   const hasPlace = /\b(?:na|no|numa|num|em|entre|diante|sob|sobre|perto|longe|rua|casa|quarto|sala|cozinha|janela|porta|escola|cidade|bairro|praca|ponte|praia|rio|bar|mercado|onibus|hospital|trabalho|floresta|quintal|fazenda|igreja|corredor|mesa|amazonia|antartida)\b/.test(normalized);
   const hasAgent = /\b(?:eu|voce|ele|ela|nos|alguem|ninguem|homem|mulher|menino|menina|mae|pai|filho|filha|amigo|amiga|professor|professora|pesquisador|pesquisadora|cientista|vizinho|vizinha|namorado|namorada|artista|medico|medica|agricultor|agricultora|corpo|rosto|mao|olhos)\b/.test(normalized) || /(?:^|\s)[A-Z][a-z]{2,}/.test(raw);
   const hasGesture = /\b(?:olha|olhou|olhando|ve|viu|vendo|anda|andou|entrou|saiu|ficou|parou|segura|segurou|abre|abriu|fecha|fechou|disse|fala|falou|grita|gritou|cala|calou|respira|respirou|escreve|escreveu|le|leu|toca|tocou|encosta|encostou|corre|correu|senta|sentou|levanta|levantou|chora|chorou|ri|riu|corta|cortou|empurra|empurrou|puxa|puxou|atravessa|atravessou|espera|esperou|treme|tremendo|tremia)\b/.test(normalized);
   const hasSpeech = /["""']/.test(raw) || /\b(?:disse|fala|falou|gritou|perguntou|respondeu)\b/.test(normalized);
   const hasConcreteAnchor = /\b(?:rua|casa|quarto|sala|cozinha|janela|porta|escola|cidade|bairro|praca|ponte|praia|rio|bar|mercado|onibus|hospital|floresta|quintal|fazenda|igreja|corredor|mesa|amazonia|antartida|laje|favela|periferia|viela|muro|paredao|calcada|fogao|corpo|rosto|mao|olhos|varal)\b/.test(normalized);
+  const hasSymbolicAnchor = /\b(?:espelho|orixa|orixas|altar|vela|sombra|retrato|portaretrato|foto|fotografia|quadro|janela|olho|olhos|olhar|rosto|boca|voz|corpo|rio|fogo|pedra|luz)\b/.test(normalized);
+  const hasImageAnchor = hasConcreteAnchor || hasSymbolicAnchor;
+  const hasAbstractLabel = /\b(?:conflito|desejo|risco|duvida|tensao|afirmacao|ferida|ideia|pensamento|sentimento|emocao)\b/.test(normalized);
+  const isSymbolicImage = hasSymbolicAnchor && !hasAbstractLabel && wordCount >= 4 && wordCount <= 14;
   return {
     hasPlace,
     hasAgent,
     hasGesture,
     hasSpeech,
     hasConcreteAnchor,
-    wordCount: countMeaningfulWords(text),
-    score: [hasPlace, hasAgent, hasGesture].filter(Boolean).length
+    hasSymbolicAnchor,
+    hasImageAnchor,
+    isSymbolicImage,
+    wordCount,
+    score: [hasPlace, hasAgent, hasGesture, hasSymbolicAnchor].filter(Boolean).length
   };
 }
 
@@ -2139,6 +2147,62 @@ function isStrongFinalLine(text) {
   return !!normalized && words >= 5 && words <= 30 && lines <= 2 && sentenceCount <= 2 && !opensDebate && !hasHedging && weakAdverbs < 2 && !genericWhoFrame && !imperativeFrame && !metaWritingFrame && !/\?$/.test(normalized);
 }
 
+function resolveLatestAcceptedStepText(stepKeys) {
+  const latest = userTurnsByStepKeys(stepKeys)
+    .filter((turn) => turn.meta?.validation !== "repair_needed")
+    .map((turn) => normalizeInlineText(turn.text))
+    .filter(Boolean)
+    .slice(-1)[0];
+  return latest || "";
+}
+
+function buildFinalLineReferenceTexts() {
+  const refs = [];
+  const firstText = normalizeInlineText(userTurnsOnly()[0]?.text);
+  const center = normalizeInlineText(state.centerSemanticTail);
+  const tension = resolveLatestAcceptedStepText(["atrito", "contraste"]);
+  const scene = normalizeInlineText(resolveConcreteSceneAnchorText());
+
+  if (firstText) refs.push(firstText);
+  if (center && normalizeSearchText(center) !== normalizeSearchText(firstText)) refs.push(center);
+  if (tension) refs.push(tension);
+  if (scene) refs.push(scene);
+
+  return refs;
+}
+
+function countJourneyRootOverlap(text, references = buildFinalLineReferenceTexts()) {
+  const referenceRoots = new Set();
+  (references || []).forEach((entry) => {
+    tokenizeForKeywords(entry).forEach((token) => referenceRoots.add(keywordRoot(token)));
+  });
+  if (!referenceRoots.size) return 0;
+
+  const seen = new Set();
+  return tokenizeForKeywords(text).filter((token) => {
+    const root = keywordRoot(token);
+    if (seen.has(root)) return false;
+    seen.add(root);
+    return referenceRoots.has(root);
+  }).length;
+}
+
+function buildFinalLineReminder() {
+  const firstText = clipWords(normalizeInlineText(userTurnsOnly()[0]?.text), 10);
+  const center = clipWords(state.centerSemanticTail, 10);
+  const scene = clipWords(resolveConcreteSceneAnchorText(), 12);
+  const reminders = [];
+
+  if (firstText) reminders.push(`ao primeiro impulso "${firstText}"`);
+  if (center && normalizeSearchText(center) !== normalizeSearchText(firstText)) reminders.push(`ao nucleo "${center}"`);
+  if (scene) reminders.push(`a imagem "${scene}"`);
+
+  if (reminders.length) {
+    return `Volte ${listToNaturalLanguage(reminders)}. Agora afine isso numa frase forte de escrita.`;
+  }
+  return "Volte ao que apareceu antes e afine isso numa frase forte de escrita.";
+}
+
 function validateStepInput(stepKey, text) {
   const clean = normalizeInlineText(text);
   if (!clean) return { ok: false, reason: "empty" };
@@ -2175,7 +2239,12 @@ function validateStepInput(stepKey, text) {
       scene.hasConcreteAnchor &&
       (scene.hasGesture || scene.hasSpeech) &&
       (scene.score >= 2 || (scene.hasAgent && scene.hasSpeech));
+    const symbolicSceneOk =
+      scene.isSymbolicImage &&
+      scene.hasImageAnchor &&
+      scene.wordCount >= 4;
     return sceneOk
+      || symbolicSceneOk
       ? { ok: true, scene }
       : { ok: false, reason: "scene", scene };
   }
@@ -2194,9 +2263,10 @@ function validateStepInput(stepKey, text) {
   }
 
   if (stepKey === "frase_final" || stepKey === "forma_final") {
-    return isStrongFinalLine(text)
+    const anchoredEnough = countJourneyRootOverlap(text) >= 1 || !buildFinalLineReferenceTexts().length;
+    return isStrongFinalLine(text) && anchoredEnough
       ? { ok: true }
-      : { ok: false, reason: "final_line" };
+      : { ok: false, reason: "final_line", anchoredEnough };
   }
 
   return { ok: true };
@@ -2246,8 +2316,62 @@ function resolveSoftAdvanceNextPrompt(stepKey) {
   return "";
 }
 
+function buildRotatingOppositionExample(stepKey) {
+  const variants = stepKey === "contraste"
+    ? [
+      { key: "medo_vontade", text: "medo x vontade" },
+      { key: "fala_silencio", text: "fala x silencio" },
+      { key: "permanencia_fuga", text: "permanencia x fuga" }
+    ]
+    : [
+      { key: "prazer_obrigacao", text: "prazer x obrigacao" },
+      { key: "orgulho_vergonha", text: "orgulho x vergonha" },
+      { key: "impulso_recuo", text: "impulso x recuo" }
+    ];
+  return pickVariedLine(`repair_example_${stepKey}`, variants);
+}
+
+function buildSoftAdvanceMirror(stepKey, userText) {
+  const anchor = stepKey === "cena" || stepKey === "concreto"
+    ? extractConcreteSceneAnchor(userText)
+    : extractReflectiveAnchor(userText) || clipWords(userText, 12);
+  if (!anchor) return "";
+
+  const leads = {
+    centro: "Fico com este eixo provisório",
+    tipo_centro: "Fico com este nome provisório",
+    atrito: "Fico com esta tensao",
+    cena: "Fico com esta imagem",
+    concreto: "Fico com este recorte",
+    contraste: "Fico com este contraste",
+    sintese: "Fico com esta linha",
+    frase_final: "Fico com esta linha",
+    forma_final: "Fico com esta versao"
+  };
+  return `${leads[stepKey] || "Fico com isto"}: "${anchor}".`;
+}
+
+function buildSceneRepairCore(stepKey, userText) {
+  const scene = detectSceneSignals(userText);
+  if (scene.hasImageAnchor && !scene.hasPlace && !scene.hasGesture && !scene.hasSpeech) {
+    return "A imagem ja apareceu. Agora me diga onde isso acontece ou que gesto faz isso respirar.";
+  }
+  if ((scene.hasPlace || scene.hasImageAnchor) && !scene.hasGesture && !scene.hasSpeech) {
+    return "O lugar ou a imagem ja apareceram. Agora me mostra o gesto, a fala ou o corpo.";
+  }
+  if (scene.hasAgent && !scene.hasPlace && !scene.hasImageAnchor) {
+    return stepKey === "concreto"
+      ? "Ja apareceu uma presenca. Agora leve isso para um lugar, uma fala, um gesto ou uma cena."
+      : "Ja apareceu uma presenca. Agora me da lugar e gesto para isso virar cena.";
+  }
+  return stepKey === "concreto"
+    ? "Quero ver isso no mundo. Mostre uma cena, uma fala, um gesto ou um lugar."
+    : "Ainda esta abstrato. Traga uma cena pequena: diga onde isso acontece, quem esta ali e qual gesto ou fala aparece.";
+}
+
 function buildSoftAdvanceReply(step, userText) {
   const stepKey = step?.key || "";
+  const mirror = buildSoftAdvanceMirror(stepKey, userText);
   const leads = {
     centro: "Ainda esta aberto, mas ja apareceu um eixo para seguir.",
     tipo_centro: "Ainda nao fechou num nome exato, mas ja deu para sentir o centro.",
@@ -2260,25 +2384,26 @@ function buildSoftAdvanceReply(step, userText) {
     forma_final: "Ainda dava para lapidar mais, mas essa versao ja pode seguir."
   };
   const lead = leads[stepKey] || "Ainda cabia lapidar mais, mas ja temos material para seguir.";
+  const mirroredLead = mirror ? `${mirror}\n${lead}` : lead;
 
   if (stepKey === "frase_final" || stepKey === "forma_final") {
     state.finalDraft = (userText || "").trim();
-    return `${lead}\n\n${finalClosureLine()}`;
+    return `${mirroredLead}\n\n${finalClosureLine()}`;
   }
 
   if (stepKey === "centro" || stepKey === "tipo_centro") {
-    return `${lead}\n\n${step.onUser(userText)}`;
+    return `${mirroredLead}\n\n${step.onUser(userText)}`;
   }
 
   const nextPrompt = resolveSoftAdvanceNextPrompt(stepKey);
   if (nextPrompt) {
-    return `${lead}\n\n${nextPrompt}`;
+    return `${mirroredLead}\n\n${nextPrompt}`;
   }
 
-  return `${lead}\n\n${step.onUser(userText)}`;
+  return `${mirroredLead}\n\n${step.onUser(userText)}`;
 }
 
-function buildStepValidationReply(stepKey) {
+function buildStepValidationReply(stepKey, userText = "") {
   const p = state.presence || PRESENCES.A;
   const prefix =
     p.key === "D" ? "" :
@@ -2289,13 +2414,13 @@ function buildStepValidationReply(stepKey) {
   const coreByStep = {
     centro: "Condense isso em 1 frase-eixo.",
     tipo_centro: "Se quiser, nomeie como pergunta, afirmacao, ferida ou desejo. Se nao, diga em poucas palavras como esse centro se apresenta.",
-    atrito: "Nao fique so no rotulo. Nomeie a tensao em duas pontas. Ex.: prazer x obrigacao.",
-    cena: "Ainda esta abstrato. Traga uma cena pequena: diga onde isso acontece, quem esta ali e qual gesto ou fala aparece.",
-    concreto: "Quero ver isso no mundo. Mostre uma cena, uma fala, um gesto ou um lugar.",
-    contraste: "Nomeie claramente as duas forcas em tensao. Ex.: medo x vontade.",
+    atrito: `Nao fique so no rotulo. Nomeie a tensao em duas pontas. Ex.: ${buildRotatingOppositionExample("atrito")}.`,
+    cena: buildSceneRepairCore("cena", userText),
+    concreto: buildSceneRepairCore("concreto", userText),
+    contraste: `Nomeie claramente as duas forcas em tensao. Ex.: ${buildRotatingOppositionExample("contraste")}.`,
     sintese: "Reuna isso em ate 3 linhas, sem abrir um novo debate.",
-    frase_final: "Isso ainda esta mais explicacao do que fecho. Tente uma unica frase que voce sustentaria no final.",
-    forma_final: "Feche em 1 frase ou 2 no maximo, na versao mais nitida que voce sustentaria."
+    frase_final: `${buildFinalLineReminder()} Em vez de explicar, afine isso numa unica frase.`,
+    forma_final: `${buildFinalLineReminder()} Feche em 1 frase ou 2 no maximo, na versao mais nitida que voce sustentaria.`
   };
 
   const core = coreByStep[stepKey] || "Tente responder de forma mais nitida.";
@@ -2646,7 +2771,7 @@ function showStep() {
 
     const repairAttempts = countRepairAttemptsForStep(step.key);
     if (!validation.ok && repairAttempts <= MAX_STEP_REPAIRS) {
-      const repairReply = buildStepValidationReply(step.key);
+      const repairReply = buildStepValidationReply(step.key, userText);
       pushTurn("iza", repairReply, {
         stepKey: step.key,
         validation: "repair"
