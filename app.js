@@ -2202,6 +2202,82 @@ function validateStepInput(stepKey, text) {
   return { ok: true };
 }
 
+const MAX_STEP_REPAIRS = 1;
+
+function countRepairAttemptsForStep(stepKey) {
+  return userTurnsByStepKeys([stepKey])
+    .filter((turn) => turn.meta?.validation === "repair_needed")
+    .length;
+}
+
+function resolveAttritoHint() {
+  return state.centerType === "pergunta" ? "Qual parte da pergunta doi mais?" :
+    state.centerType === "afirmacao" ? "O que ameaca essa afirmacao?" :
+      state.centerType === "ferida" ? "O que encosta nessa ferida?" :
+        state.centerType === "desejo" ? "O que atrapalha esse desejo?" :
+          "Qual e a tensao aqui?";
+}
+
+function resolveSoftAdvanceNextPrompt(stepKey) {
+  if (state.trackKey === "iniciante") {
+    if (stepKey === "atrito") {
+      return `Passo 3 — Cena\nTraga uma cena concreta: lugar, alguem e um gesto. ${resolveAttritoHint()}`;
+    }
+    if (stepKey === "cena") {
+      return "Passo 4 — Frase que fica\nEscreva a frase que merece permanecer.";
+    }
+  }
+
+  if (state.trackKey === "intermediaria") {
+    if (stepKey === "atrito") {
+      return "Passo 4 — Concreto\nMostre onde isso aparece: cena, fala, gesto ou lugar.";
+    }
+    if (stepKey === "concreto") {
+      return "Passo 5 — Contraste\nNomeie duas forcas em tensao (ex.: medo x vontade).";
+    }
+    if (stepKey === "contraste") {
+      return "Passo 6 — Sintese\nReuna tudo em 3 linhas.";
+    }
+    if (stepKey === "sintese") {
+      return "Passo 7 — Forma final\nEscreva a versao que vale levar adiante.";
+    }
+  }
+
+  return "";
+}
+
+function buildSoftAdvanceReply(step, userText) {
+  const stepKey = step?.key || "";
+  const leads = {
+    centro: "Ainda esta aberto, mas ja apareceu um eixo para seguir.",
+    tipo_centro: "Ainda nao fechou num nome exato, mas ja deu para sentir o centro.",
+    atrito: "Ainda nao saiu inteiro em duas pontas, mas a pressao principal ja apareceu.",
+    cena: "A cena ainda pode ganhar mais corpo, mas ja temos fio suficiente para seguir.",
+    concreto: "Ainda cabe mais concretude, mas ja apareceu um rastro no mundo.",
+    contraste: "O contraste ainda pode ficar mais nitido, mas o eixo da tensao apareceu.",
+    sintese: "Ainda cabia condensar mais, mas ja temos material para seguir.",
+    frase_final: "Ainda dava para lapidar mais, mas essa linha ja pode fechar esta volta.",
+    forma_final: "Ainda dava para lapidar mais, mas essa versao ja pode seguir."
+  };
+  const lead = leads[stepKey] || "Ainda cabia lapidar mais, mas ja temos material para seguir.";
+
+  if (stepKey === "frase_final" || stepKey === "forma_final") {
+    state.finalDraft = (userText || "").trim();
+    return `${lead}\n\n${finalClosureLine()}`;
+  }
+
+  if (stepKey === "centro" || stepKey === "tipo_centro") {
+    return `${lead}\n\n${step.onUser(userText)}`;
+  }
+
+  const nextPrompt = resolveSoftAdvanceNextPrompt(stepKey);
+  if (nextPrompt) {
+    return `${lead}\n\n${nextPrompt}`;
+  }
+
+  return `${lead}\n\n${step.onUser(userText)}`;
+}
+
 function buildStepValidationReply(stepKey) {
   const p = state.presence || PRESENCES.A;
   const prefix =
@@ -2568,7 +2644,8 @@ function showStep() {
       validation: validation.ok ? "ok" : "repair_needed"
     });
 
-    if (!validation.ok) {
+    const repairAttempts = countRepairAttemptsForStep(step.key);
+    if (!validation.ok && repairAttempts <= MAX_STEP_REPAIRS) {
       const repairReply = buildStepValidationReply(step.key);
       pushTurn("iza", repairReply, {
         stepKey: step.key,
@@ -2578,10 +2655,15 @@ function showStep() {
       return;
     }
 
-    const reply = step.onUser(userText);
+    const acceptedValidation = validation.ok ? "accepted" : "soft_accept";
+    if (!validation.ok) {
+      state.turns[state.turns.length - 1].meta.validation = acceptedValidation;
+    }
+
+    const reply = validation.ok ? step.onUser(userText) : buildSoftAdvanceReply(step, userText);
     pushTurn("iza", reply, {
       stepKey: step.key,
-      validation: "accepted"
+      validation: acceptedValidation
     });
 
     showIza(reply, () => {
