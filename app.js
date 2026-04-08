@@ -22,7 +22,7 @@
 // ==========================================
 
 const WEBAPP_URL =
-  "https://script.google.com/macros/s/AKfycbwi_MbQBZmx-1y-jSy82T3JlJIUdy92758LsrNXXCbDjNgk0ggzkoUyp4Zkeb9J7_zr/exec";
+  "https://script.google.com/macros/s/AKfycby3eZEp55rzljLpfsHO-Lbq2v6HJeL0uSo8C3zSinZV_PK9zKQwUuRidaT8OuOekQa_/exec";
 const APP_VARIANT = "iza0.2";
 
 const MIN_INSPIRED_ROUNDS = 7;
@@ -410,15 +410,15 @@ const PRESENCES = {
     mirror: "short",
     maxQuestions: 1,
     softeners: ["", "Se fizer sentido,", "Talvez,", "Pode ser que,"],
-    closings: ["", "Se quiser, siga.", "Continue quando fizer sentido."]
+    closings: ["", "Se fizer sentido, segue daqui.", "Leva isso mais um passo."]
   },
   B: {
     key: "B",
     name: "IZA Calorosa",
     mirror: "short",
     maxQuestions: 1,
-    softeners: ["Entendi.", "Tô com você.", "Certo.", "Obrigado por dizer isso."],
-    closings: ["Se quiser, a gente ajusta.", "Pode seguir.", "Estou aqui com você."]
+    softeners: ["Entendi.", "Estou com voce.", "Certo.", "Obrigada por trazer isso."],
+    closings: ["", "Pode ir no seu ritmo.", "Se quiser, seguimos daqui."]
   },
   C: {
     key: "C",
@@ -426,7 +426,7 @@ const PRESENCES = {
     mirror: "medium",
     maxQuestions: 2,
     softeners: ["Vamos focar.", "Certo.", "Ok. Vamos organizar."],
-    closings: ["Responda direto.", "Vamos para a próxima.", "Siga com clareza."]
+    closings: ["", "Agora vai ao ponto.", "Sustente isso em uma frase."]
   },
   D: {
     key: "D",
@@ -434,7 +434,7 @@ const PRESENCES = {
     mirror: "tiny",
     maxQuestions: 1,
     softeners: [""],
-    closings: ["Continue.", "Siga.", ""]
+    closings: [""]
   }
 };
 
@@ -534,21 +534,39 @@ function presencePhraseSets() {
   return {
     A: {
       softeners: [""],
-      closings: ["", "Se quiser, siga.", "Continue quando fizer sentido.", "Veja se isso pede mais um passo."]
+      closings: ["", "Se fizer sentido, segue daqui.", "Leva isso mais um passo.", "Veja se isso pede um detalhe a mais."]
     },
     B: {
       softeners: [""],
-      closings: ["Se quiser, eu sigo com você.", "Pode ir no seu ritmo.", "Vamos com calma.", "Eu fico por perto."]
+      closings: ["", "Pode ir no seu ritmo.", "Se quiser, seguimos daqui.", "Eu fico por perto."]
     },
     C: {
       softeners: [""],
-      closings: ["Responda em uma frase.", "Agora sustente isso.", "Siga com precisão.", "Recorte melhor."]
+      closings: ["", "Agora vai ao ponto.", "Sustente isso em uma frase.", "Recorte o essencial."]
     },
     D: {
       softeners: [""],
-      closings: ["Continue.", "Mais.", "", "Siga."]
+      closings: [""]
     }
   };
+}
+
+function replyLines(text) {
+  return String(text || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function lastReplyLine(text) {
+  const lines = replyLines(text);
+  return lines.length ? lines[lines.length - 1] : "";
+}
+
+function hasStepTransition(text) {
+  return /(?:^|\n)(?:Passo|Etapa)\s+\d+|(?:^|\n)Agora\b|(?:^|\n)Se fosse nomear\b|(?:^|\n)Fechamos\b/i.test(
+    String(text || "")
+  );
 }
 
 function presenceWrap(p, coreText) {
@@ -585,10 +603,15 @@ function presenceWrap(p, coreText) {
 
   if (minimalNow) return coreText.trim();
 
-  if (/\n/.test(coreText)) {
+  const lines = replyLines(coreText);
+  const multiline = lines.length >= 2;
+  const endsWithQuestion = /\?$/.test(lastReplyLine(coreText));
+  const carriesNextStep = hasStepTransition(coreText);
+
+  if (multiline) {
     soft = "";
-    if (coreText.split("\n").filter(Boolean).length >= 3) close = "";
   }
+  if (multiline || carriesNextStep || endsWithQuestion) close = "";
 
   const prefix = soft ? soft + " " : "";
   const suffix = close ? "\n" + close : "";
@@ -700,6 +723,17 @@ function ensureMeaningfulTemplateText(text, userText) {
   return out;
 }
 
+function clipWords(text, maxWords = 14) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  return clean
+    .split(/\s+/)
+    .slice(0, Math.max(1, maxWords))
+    .join(" ")
+    .replace(/[\s,;:.-]+$/, "")
+    .trim();
+}
+
 function extractReflectiveAnchor(userText) {
   const raw = String(userText || "").replace(/\s+/g, " ").trim();
   if (!raw) return "";
@@ -734,7 +768,7 @@ function extractReflectiveAnchor(userText) {
     .sort((a, b) => b.score - a.score || a.words - b.words);
 
   const chosen = scored[0] || { clean: raw.split(/\s+/).slice(0, 10).join(" ") };
-  return swapPronouns(chosen.clean).replace(/\s+/g, " ").trim();
+  return clipWords(swapPronouns(chosen.clean).replace(/\s+/g, " ").trim(), 14);
 }
 
 
@@ -743,8 +777,7 @@ function fallbackUserAnchor(userText) {
   if (anchor) return anchor;
   const t = (userText || "").trim();
   if (!t) return "isso que você trouxe";
-  const slice = t.split(/\s+/).slice(0, 10).join(" ");
-  return swapPronouns(slice);
+  return clipWords(swapPronouns(t), 10);
 }
 
 const EXTERNAL_RULES = Array.isArray(window.IZA_RULES) ? window.IZA_RULES : [];
@@ -804,6 +837,16 @@ function toneByPresence(p, mix) {
   return "discreta";
 }
 
+function resolveReplyBucket(p, mix) {
+  if (!p) return "A";
+  if (p.key !== "H") return p.key;
+  const tone = toneByPresence(p, mix);
+  if (tone === "minimalista") return "D";
+  if (tone === "firme") return "C";
+  if (tone === "calorosa") return "B";
+  return "A";
+}
+
 
 function adaptRuleByPresence(text, p, mix) {
   const base = String(text || "").trim();
@@ -815,10 +858,12 @@ function adaptRuleByPresence(text, p, mix) {
     return (short || base).replace(/\s{2,}/g, " ") + "?";
   }
   if (tone === "firme") {
-    return /^(Foco|Direto|Seja|Objetivo):/i.test(base) ? base : `Direto: ${base}`;
+    return /^(Foco|Direto|Seja|Objetivo|Vamos ao ponto|Recorte):/i.test(base) || /\?$/.test(base)
+      ? base
+      : `Vamos ao ponto: ${base}`;
   }
   if (tone === "calorosa") {
-    const prefix = pick(["Entendi. ", "Tô com você. ", "Obrigado por dividir isso. "]);
+    const prefix = pick(["Entendi. ", "Estou com voce. ", "Obrigada por trazer isso. "]);
     return prefix + base;
   }
   return base;
@@ -1512,7 +1557,7 @@ function recentIzaTexts(limit = 1) {
 
 function isMirrorishText(text) {
   const normalized = normalizeSearchText(text).replace(/\s+/g, " ").trim();
-  return /(?:se eu devolver o que apareceu com mais forca|o que estou escutando no seu texto e|voce trouxe isto|tem um ponto vivo ai|no que voce disse ficou aceso|estou te ouvindo por aqui|vou recortar o nucleo assim|no centro do que voce disse esta isto|tomemos esta parte por um instante|se eu sigo seu eixo|se entendi seu eixo)/.test(normalized);
+  return /(?:fico com esta parte|tem um ponto importante aqui|talvez o centro esteja em|tem algo sensivel aqui|isso pede escuta|o ponto central esta em|o eixo passa por|o centro do que voce trouxe passa por|talvez a frase mais viva esteja em)/.test(normalized);
 }
 
 function isSocraticPrompt(text) {
@@ -1527,8 +1572,10 @@ function isSocraticPrompt(text) {
 function shouldIncludeMirrorLine(p, questionText, options = {}) {
   if (options.suppressMirror || options.standalone || options.skipPresenceWrap) return false;
   if (isSocraticPrompt(questionText)) return false;
+  if (p.key === "C") return false;
   if (recentIzaTexts(1).some(isMirrorishText)) return false;
   if (state.trackKey === "iniciante" && state.stepIndex >= 1) return false;
+  if (hasStepTransition(questionText)) return false;
   if (p.key === "H" && (state.presenceMix?.C || 0) > 0.4 && state.trackKey !== "inspirada") {
     return false;
   }
@@ -1543,34 +1590,33 @@ function shortMirror(presence, userText) {
     swapPronouns(t.split(/\s+/).slice(0, 10).join(" "));
 
   if (presence.mirror === "tiny") {
-    return `"${anchor}"`;
+    return "";
   }
   if (presence.mirror === "short") {
     if (presence.key === "B") {
       return pickVariedLine("mirror_short_b", [
-        { key: "aceso", text: `No que voce disse, ficou aceso: "${anchor}".` },
-        { key: "ouvindo", text: `Estou te ouvindo por aqui: "${anchor}".` },
-        { key: "pausa", text: `Por um momento, fico com isto: "${anchor}".` }
+        { key: "fico", text: `Fico com esta parte: "${anchor}".` },
+        { key: "sensivel", text: `Tem algo sensivel aqui: "${anchor}".` },
+        { key: "escuta", text: `Isso pede escuta: "${anchor}".` }
       ]);
     }
     return pickVariedLine("mirror_short_default", [
-      { key: "trouxe", text: `Voce trouxe isto: "${anchor}".` },
-      { key: "vivo", text: `Tem um ponto vivo ai: "${anchor}".` },
-      { key: "recorte", text: `Posso recortar assim: "${anchor}".` }
+      { key: "fico", text: `Fico com esta parte: "${anchor}".` },
+      { key: "ponto", text: `Tem um ponto importante aqui: "${anchor}".` },
+      { key: "centro", text: `Talvez o centro esteja em "${anchor}".` }
     ]);
   }
   if (presence.key === "C") {
     return pickVariedLine("mirror_medium_c", [
-      { key: "centro", text: `No centro do que voce disse esta isto: "${anchor}".` },
-      { key: "nucleo", text: `Vou recortar o nucleo assim: "${anchor}".` },
-      { key: "eixo", text: `Se entendi seu eixo, ele passa por "${anchor}".` }
+      { key: "centro", text: `O ponto central esta em "${anchor}".` },
+      { key: "recorte", text: `Recorto assim: "${anchor}".` },
+      { key: "eixo", text: `O eixo passa por "${anchor}".` }
     ]);
   }
   return pickVariedLine("mirror_medium_default", [
-    { key: "escutando", text: `O que estou escutando no seu texto e: "${anchor}".` },
-    { key: "forca", text: `Se eu devolver o que apareceu com mais forca, diria: "${anchor}".` },
-    { key: "tomemos", text: `Tomemos esta parte por um instante: "${anchor}".` },
-    { key: "eixo", text: `Se eu sigo seu eixo, chego a isto: "${anchor}".` }
+    { key: "peso", text: `O que mais pesa aqui e "${anchor}".` },
+    { key: "centro", text: `O centro do que voce trouxe passa por "${anchor}".` },
+    { key: "frase", text: `Talvez a frase mais viva esteja em "${anchor}".` }
   ]);
 }
 
@@ -1592,9 +1638,9 @@ function adaptRuleByTrack(text) {
     if (isSocraticPrompt(base)) return base;
     if (/\?$/.test(base) && base.length >= 42) return base;
     return base + " " + pickVariedLine("track_iniciante_suffix", [
-      { key: "caso", text: "Diga isso por meio de um caso pequeno." },
-      { key: "detalhe", text: "Se puder, traga um detalhe concreto." },
-      { key: "cena", text: "Teste isso numa cena breve." }
+      { key: "caso", text: "Se puder, traz isso num caso pequeno." },
+      { key: "detalhe", text: "Se fizer sentido, me mostra um detalhe concreto." },
+      { key: "cena", text: "Se ajudar, testa isso numa cena breve." }
     ]);
   }
   if (state.trackKey === "intermediaria") {
@@ -1613,9 +1659,9 @@ function adaptRuleByTrack(text) {
     if (/objetiv|1-2 frases|1 frase|duas frases/i.test(base)) return base;
     if (isSocraticPrompt(base)) return base;
     return base + " " + pickVariedLine("track_intermediaria_suffix", [
-      { key: "objetiva", text: "Responda de forma objetiva em 1-2 frases." },
-      { key: "tese", text: "Se puder, formule a tese em uma frase." },
-      { key: "prova", text: "Tente nomear a ideia e a prova em seguida." }
+      { key: "objetiva", text: "Se der, responde em 1 ou 2 frases." },
+      { key: "tese", text: "Se puder, formula a tese em uma frase." },
+      { key: "prova", text: "Tenta nomear a ideia e a prova logo depois." }
     ]);
   }
   if (state.trackKey === "inspirada") {
@@ -1627,9 +1673,9 @@ function adaptRuleByTrack(text) {
     if (isSocraticPrompt(base)) return base;
     if (/\?$/.test(base) && base.length >= 42) return base;
     return base + " " + pickVariedLine("track_inspirada_suffix", [
-      { key: "fluxo", text: "Responda no fluxo." },
-      { key: "imagem", text: "Se vier uma imagem, siga por ela." },
-      { key: "frase", text: "Deixe a proxima frase aparecer sem forcar." }
+      { key: "fluxo", text: "Pode responder no fluxo." },
+      { key: "imagem", text: "Se vier uma imagem, vai por ela." },
+      { key: "frase", text: "Deixa a proxima frase aparecer sem forcar." }
     ]);
   }
   return base;
@@ -1638,21 +1684,21 @@ function adaptRuleByTrack(text) {
 function refinedPresenceClosing(p) {
   const banks = {
     A: [
-      "Se quiser, leve isso um passo adiante.",
+      "Se fizer sentido, segue daqui.",
       "Veja se isso se sustenta num caso pequeno.",
-      "Continue quando o proximo passo aparecer."
+      "Leva isso mais um passo."
     ],
     B: [
       "Pode ir no seu ritmo.",
       "Se quiser, eu sigo com voce.",
-      "Ainda ha algo aqui que pode amadurecer."
+      "Ainda tem algo aqui que pode amadurecer."
     ],
     C: [
-      "Responda em uma frase.",
+      "Agora diga isso em uma frase.",
       "Teste a consequencia disso.",
-      "Agora sustente essa distincao."
+      "Recorte o essencial."
     ],
-    D: ["Siga.", "Mais."]
+    D: [""]
   };
 
   if (p.key === "H" && state.presenceMix) {
@@ -1677,7 +1723,7 @@ function refinedLeadLine(userText) {
     if ((mix.D || 0) > 0.55) return "";
     if ((mix.C || 0) > 0.45) {
       return pickVariedLine("lead_h_c", [
-        { key: "nucleo", text: "Vamos ao nucleo." },
+        { key: "nucleo", text: "Vamos ao ponto." },
         { key: "delimite", text: "Delimite o ponto central." },
         { key: "recorte", text: "Recorte melhor o que apareceu." }
       ]);
@@ -1700,8 +1746,8 @@ function refinedLeadLine(userText) {
     return pickVariedLine("lead_a", [
       { key: "entendi", text: "Entendi." },
       { key: "certo", text: "Certo." },
-      { key: "pista", text: "Talvez o texto ja tenha uma pista ai." },
-      { key: "respirar", text: "Vamos deixar isso respirar." }
+      { key: "pista", text: "Tem uma pista aqui." },
+      { key: "partes", text: "Vamos por partes." }
     ]);
   }
 
@@ -1710,7 +1756,7 @@ function refinedLeadLine(userText) {
     const bank = [
       { key: "confiar", text: "Obrigada por trazer isso." },
       { key: "sem_pressa", text: "Estou com voce, sem pressa." },
-      { key: "escuta", text: "Entendi. Isso pede escuta." },
+      { key: "escuta", text: "Isso pede escuta." },
       { key: "ouvir", text: "Vamos ouvir melhor o que apareceu aqui." },
       ct === "ferida" ? { key: "ferida", text: "Isso toca num ponto sensivel." } : null,
       ct === "desejo" ? { key: "desejo", text: "Isso tem pulsacao." } : null,
@@ -1722,14 +1768,26 @@ function refinedLeadLine(userText) {
 
   if (p.key === "C") {
     return pickVariedLine("lead_c", [
-      { key: "nucleo", text: "Vamos ao nucleo." },
-      { key: "preciso", text: "Seja preciso." },
+      { key: "nucleo", text: "Vamos ao ponto." },
+      { key: "preciso", text: "Recorte o essencial." },
       { key: "delimite", text: "Delimite o que esta em jogo." },
       { key: "recorte", text: "Recorte o ponto central." }
     ]);
   }
 
   return "";
+}
+
+function chooseReplyPrelude(p, lead, mirror, bridge, lens, includeMirror, questionText) {
+  const bucket = resolveReplyBucket(p, state.presenceMix || null);
+  const mirrorLine = includeMirror ? mirror : "";
+  const structuredQuestion = hasStepTransition(questionText) || replyLines(questionText).length >= 2;
+
+  if (bucket === "D") return "";
+  if (bucket === "C") return lead || lens || bridge || "";
+  if (bucket === "B") return lens || mirrorLine || lead || bridge || "";
+  if (structuredQuestion) return mirrorLine || lead || "";
+  return bridge || mirrorLine || lead || (Math.random() < 0.35 ? lens : "");
 }
 
 function composeReply(p, userText, mirror, qText, minimalistNow, replyOptions = {}) {
@@ -1774,28 +1832,27 @@ function composeReply(p, userText, mirror, qText, minimalistNow, replyOptions = 
   }
 
   const parts = [];
-  if (!options.suppressLead && lead && p.key === "B") parts.push(lead);
-  if (
-    includeMirror &&
-    safeMirror &&
-    !(p.key === "B" && bridge && Math.random() < 0.6)
-  ) {
-    parts.push(safeMirror);
-  }
-  if (!options.suppressLead && lead && p.key !== "B") parts.push(lead);
-  if (!options.suppressBridge && bridge) parts.push(bridge);
-
-  if (lens) {
-    if (p.key === "A") {
-      if (Math.random() < 0.45) parts.push(lens);
-    } else {
-      parts.push(lens);
-    }
-  }
+  const prelude = chooseReplyPrelude(
+    p,
+    !options.suppressLead ? lead : "",
+    safeMirror,
+    !options.suppressBridge ? bridge : "",
+    lens,
+    includeMirror,
+    safeQuestion
+  );
+  if (prelude) parts.push(prelude);
 
   parts.push(safeQuestion || `Falando em "${fallbackUserAnchor(userText)}", o que aparece agora?`);
 
-  if (!options.suppressClosing && closing && !(p.key === "B" && Math.random() < 0.55)) {
+  const canClose =
+    !options.suppressClosing &&
+    closing &&
+    replyLines(safeQuestion).length === 1 &&
+    !hasStepTransition(safeQuestion) &&
+    !/\?$/.test(lastReplyLine(safeQuestion));
+
+  if (canClose && !(p.key === "B" && Math.random() < 0.55)) {
     parts.push(closing);
   }
 
@@ -1841,7 +1898,7 @@ function askSevenWordsPrompt(userText) {
           ct === "afirmacao" ? "Tente em 7 palavras: que prova sustenta isso?" :
             "Tente em 7 palavras com lugar ou gesto: o que você quer dizer?";
 
-  const hook = userText ? `Você disse: "${swapPronouns(userText)}—". ` : "";
+  const hook = userText && countMeaningfulWords(userText) >= 4 ? "Vamos condensar um pouco. " : "";
   return hook + base;
 }
 
@@ -2196,7 +2253,7 @@ function buildCenterChoiceFragment(text) {
     raw;
 
   const clipped = chosen.split(/\s+/).slice(0, 18).join(" ").replace(/[\s,;:.-]+$/, "").trim();
-  return clipped || raw.split(/\s+/).slice(0, 12).join(" ");
+  return clipWords(clipped || raw, 14);
 }
 
 function extractConcreteSceneAnchor(text) {
@@ -2213,7 +2270,7 @@ function extractConcreteSceneAnchor(text) {
     sentenceCandidates[0] ||
     raw;
 
-  return chosen.split(/\s+/).slice(0, 20).join(" ").replace(/[\s,;:.-]+$/, "").trim();
+  return clipWords(chosen, 16);
 }
 
 function buildConcreteStepReply(text, nextPrompt) {
@@ -2256,15 +2313,15 @@ function refinedCenterChoicePrompt(fragment) {
   const frag = buildCenterChoiceFragment(fragment);
 
   if (p.key === "D") {
-    return `"${frag}"\nIsso está mais perto de pergunta, afirmação, ferida ou desejo?\nSe preferir, escreva do seu jeito.`;
+    return `"${frag}"\nIsso te soa mais como pergunta, afirmacao, ferida ou desejo?\nSe preferir, nomeie do seu jeito.`;
   }
   if (p.key === "C") {
-    return `Você disse: "${frag}". Classifique o núcleo com precisão: pergunta, afirmação, ferida ou desejo.\nSe preferir, nomeie do seu jeito.`;
+    return `Em "${frag}", o nucleo parece mais pergunta, afirmacao, ferida ou desejo?\nSe quiser, nomeie com suas palavras.`;
   }
   if (p.key === "B") {
-    return `Ao ler "${frag}", eu sinto um núcleo vivo aqui.\nO que nomeia melhor isso: uma pergunta, uma afirmação, uma ferida ou um desejo?\nSe preferir, escreva do seu jeito.`;
+    return `Lendo "${frag}", eu sinto um nucleo vivo aqui.\nIsso te soa mais como pergunta, afirmacao, ferida ou desejo?\nSe preferir, nomeie do seu jeito.`;
   }
-  return `Quando você diz "${frag}", qual nome sustenta melhor esse núcleo: pergunta, afirmação, ferida ou desejo?\nSe preferir, escreva do seu jeito.`;
+  return `Quando voce le "${frag}", isso soa mais como pergunta, afirmacao, ferida ou desejo?\nSe preferir, nomeie do seu jeito.`;
 }
 
 // -------------------- TRACKS --------------------
@@ -2727,9 +2784,11 @@ const JOURNEY_STOPWORDS = new Set([
 ]);
 
 const JOURNEY_WEAK_TOKENS = new Set([
-  "acha", "achar", "acho", "amo", "amar", "deve", "dever", "deveria",
-  "gosta", "gostar", "pode", "poder", "poderia", "podia", "precisa", "precisar",
-  "quer", "querer", "sabe", "saber"
+  "acha", "achar", "acho", "amo", "amar", "apenas", "certa", "certo", "certamente",
+  "deixa", "deixar", "deve", "dever", "deveria", "gosta", "gostar", "mundo",
+  "parece", "parecer", "pode", "poder", "poderia", "podia", "precisa", "precisar",
+  "principalmente", "quer", "querer", "quanto", "quando", "resto", "sabe", "saber",
+  "tento", "tentar", "todo", "verdade", "anos", "ano"
 ]);
 
 function clipText(text, max = 160) {
@@ -2777,6 +2836,62 @@ function tokenizeForKeywords(text) {
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((token) => token.length >= 4 && !JOURNEY_STOPWORDS.has(token) && !JOURNEY_WEAK_TOKENS.has(token));
+}
+
+function keywordDisplayKey(token) {
+  return normalizeSearchText(token).replace(/[^a-z0-9]/g, "");
+}
+
+function buildJourneyKeywordDisplayMap(texts) {
+  const map = Object.create(null);
+  (texts || []).forEach((text) => {
+    const matches = String(text || "").match(/[A-Za-zÀ-ÿ0-9]+/g) || [];
+    matches.forEach((raw) => {
+      const clean = String(raw || "").trim();
+      const key = keywordDisplayKey(clean);
+      if (!key || JOURNEY_STOPWORDS.has(key) || JOURNEY_WEAK_TOKENS.has(key)) return;
+      if (!map[key] || clean.length > map[key].length) map[key] = clean;
+    });
+  });
+  return map;
+}
+
+function extractJourneyKeywordData(limit = 12) {
+  const counts = Object.create(null);
+  const seenRoots = new Set();
+  const sources = resolveKeywordSources();
+  const displayMap = buildJourneyKeywordDisplayMap(sources.map(({ text }) => text));
+
+  sources.forEach(({ text, weight }) => {
+    tokenizeForKeywords(text).forEach((token) => {
+      counts[token] = (counts[token] || 0) + scoreKeywordToken(token, weight);
+    });
+  });
+
+  const ranked = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+    .filter(([token]) => {
+      const root = keywordRoot(token);
+      if (seenRoots.has(root)) return false;
+      seenRoots.add(root);
+      return true;
+    })
+    .slice(0, Math.max(1, limit));
+
+  const maxScore = ranked[0]?.[1] || 1;
+  const minScore = ranked[ranked.length - 1]?.[1] || maxScore;
+  const spread = Math.max(0.01, maxScore - minScore);
+
+  return ranked.map(([token, score], index) => {
+    const ratio = (score - minScore) / spread;
+    return {
+      token,
+      text: displayMap[token] || token,
+      score: Number(score.toFixed(2)),
+      size: Number((0.92 + ratio * 0.8).toFixed(2)),
+      tone: index % 4
+    };
+  });
 }
 
 function listToNaturalLanguage(items) {
@@ -2871,25 +2986,7 @@ function resolveKeywordSources() {
 }
 
 function extractJourneyKeywords() {
-  const counts = Object.create(null);
-  const seenRoots = new Set();
-
-  resolveKeywordSources().forEach(({ text, weight }) => {
-    tokenizeForKeywords(text).forEach((token) => {
-      counts[token] = (counts[token] || 0) + scoreKeywordToken(token, weight);
-    });
-  });
-
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
-    .map(([token]) => token)
-    .filter((token) => {
-      const root = keywordRoot(token);
-      if (seenRoots.has(root)) return false;
-      seenRoots.add(root);
-      return true;
-    })
-    .slice(0, 6);
+  return extractJourneyKeywordData(6).map((item) => item.text);
 }
 
 function buildJourneySynthesis(summary, keywords) {
@@ -2907,12 +3004,12 @@ function buildJourneySynthesis(summary, keywords) {
   const lines = [];
   lines.push(
     focus
-      ? `Na ${trackName.toLowerCase()}, seu texto foi abrindo caminho em torno de ${focus}.`
-      : `Na ${trackName.toLowerCase()}, seu texto foi encontrando um eixo proprio.`
+      ? `Na ${trackName.toLowerCase()}, o seu texto foi girando em torno de ${focus}.`
+      : `Na ${trackName.toLowerCase()}, o seu texto foi encontrando um eixo proprio.`
   );
 
   if (state.centerSemanticTail) {
-    lines.push(`Desde cedo, ficou marcado este recorte: "${clipText(state.centerSemanticTail, 110)}".`);
+    lines.push(`Logo cedo, uma linha pediu retorno: "${clipText(state.centerSemanticTail, 110)}".`);
   } else if (state.centerType) {
     lines.push(`No percurso, apareceu ${centerMap[state.centerType] || "um nucleo que foi se revelando melhor"}.`);
   } else if (
@@ -2920,23 +3017,41 @@ function buildJourneySynthesis(summary, keywords) {
     summary.lastText &&
     normalizeInlineText(summary.firstText) !== normalizeInlineText(summary.lastText)
   ) {
-    lines.push("Do primeiro impulso ao fechamento, a escrita ganhou mais nitidez e recorte.");
+    lines.push("Do primeiro impulso ao fecho, a escrita foi ganhando nitidez, corpo e direcao.");
   } else {
-    lines.push("Ao longo da conversa, a ideia foi se deixando ver com mais clareza.");
+    lines.push("Ao longo da conversa, a ideia foi aparecendo com mais clareza.");
   }
 
   if (sceneAnchor) {
-    lines.push(`Na cena, ficou isto: "${sceneAnchor}".`);
+    lines.push(`Em certo ponto, o texto ganhou corpo nesta cena: "${sceneAnchor}".`);
   }
 
   if (summary.emergentPhrase) {
-    lines.push(`Ficou ecoando esta linha: "${clipText(summary.emergentPhrase, 120)}".`);
+    lines.push(`E, quando tudo foi afinando, esta linha ficou vibrando por baixo das outras: "${clipText(summary.emergentPhrase, 120)}".`);
   } else if (summary.lastText) {
-    lines.push(`No fim, ficou mais visivel isto: "${clipText(summary.lastText, 120)}".`);
+    lines.push(`No fim, o que mais ficou aceso foi isto: "${clipText(summary.lastText, 120)}".`);
   }
 
   const synthesis = lines.join(" ").replace(/\s+/g, " ").trim();
   return synthesis.length > 420 ? synthesis.slice(0, 417).trim() + "..." : synthesis;
+}
+
+function buildContinuationInvitation(summary, keywordCloud) {
+  const strongWords = (keywordCloud || []).map((item) => item.text).filter(Boolean);
+  const seed = strongWords[0] || summary?.keywords?.[0] || "palavra";
+  const companion = strongWords[1] || summary?.keywords?.[1] || "frase";
+  const sceneAnchor = clipText(summary?.sceneAnchor || resolveConcreteSceneAnchorText(), 96);
+  const finalLine = clipText(summary?.lastText || resolveFinalAnchorText(), 110);
+
+  if (sceneAnchor && finalLine) {
+    return `Se essa linha voltar, recomeca por esta imagem: "${sceneAnchor}". Escreve mais tres linhas sem se vigiar. As vezes o texto so estava pedindo intervalo.`;
+  }
+
+  if (finalLine) {
+    return `Se essa linha voltar mais tarde, continua escrevendo a partir dela por mais tres linhas, sem se vigiar. O texto pode ter fechado por hoje, mas ainda nao terminou de nascer.`;
+  }
+
+  return `Se ${seed} ou ${companion} voltarem depois, anota antes que esfriem e segue escrevendo. Nem toda palavra pede ponto final na primeira aparicao.`;
 }
 
 function collectSemanticAnchorTokens() {
@@ -3092,10 +3207,11 @@ function buildFallbackLiteraryGift(payloadOrKeywords) {
   return {
     source: "fallback",
     seed,
-    intro: "Desta vez, a biblioteca não abriu um verso nítido. Ainda assim, IZA não te deixa sair de mãos vazias.",
+    intro: "As suas palavras ficaram acesas aqui. A biblioteca nao me abriu um verso com nome, mas alguma ressonancia continuou viva.",
     fragment: `Guarde ${seed}. Quando a trilha parece terminar, ela ainda conversa com ${companion}. O que ficou vivo aqui talvez seja o começo de outra frase.`,
+    fragment,
     author: "IZA",
-    title: "Eco de encerramento",
+    title: "Eco que ficou",
     matchedKeywords: [seed, companion].filter(Boolean)
   };
 }
@@ -3131,7 +3247,7 @@ function normalizeGiftResponse(rawGift, payload) {
     seed: rawGift.seed || payload.keywords?.[0] || "",
     intro:
       rawGift.intro ||
-      "Antes de encerrar, recolhi alguns rastros do que você deixou pelo caminho e encontrei este eco.",
+      "As suas palavras me lembraram uma poesia que li ha tempo. Guardei este fragmento para te devolver.",
     fragment,
     author: rawGift.author || "Autor desconhecido",
     title: rawGift.title || "Trecho sem título",
@@ -3149,29 +3265,29 @@ function buildGiftLookupFallback(payload, response) {
     source: "fallback_local",
     intro:
       reason === "timeout"
-        ? "A biblioteca poética demorou mais do que devia para responder. IZA guardou o seu fechamento e te deixa este eco por agora."
+        ? "A biblioteca poetica demorou mais do que devia para responder. Ainda assim, ficou um eco vivo por aqui."
         : reason === "rpc_timeout"
-          ? "A biblioteca poética demorou mais do que devia para responder neste ambiente. IZA guardou o seu fechamento e te deixa este eco por agora."
+          ? "A biblioteca poetica demorou mais do que devia para responder neste ambiente. Ainda assim, ficou um eco vivo por aqui."
         : reason === "network"
-          ? "A ligação com a biblioteca poética falhou neste momento. IZA guardou o seu percurso e te entrega este eco por agora."
+          ? "A ligacao com a biblioteca poetica falhou neste momento. Ainda assim, alguma ressonancia ficou viva aqui."
           : reason === "rpc_failure"
-            ? "A ligação interna com a biblioteca poética falhou neste momento. IZA guardou o seu percurso e te entrega este eco por agora."
+            ? "A ligacao interna com a biblioteca poetica falhou neste momento. Ainda assim, alguma ressonancia ficou viva aqui."
             : reason === "query_too_long"
-              ? "O pedido à biblioteca poética ficou maior do que o canal suportou. IZA guardou o seu percurso e te entrega este eco por agora."
+              ? "O pedido a biblioteca poetica ficou maior do que o canal suportou. Ainda assim, alguma ressonancia ficou viva aqui."
               : reason === "dom_unavailable"
-                ? "Nao consegui abrir o canal do presente literario nesta tela. IZA guardou o seu percurso e te entrega este eco por agora."
-          : "A biblioteca poética encontrou um desvio na busca. IZA guardou o seu percurso e te entrega este eco por agora."
+                ? "Nao consegui abrir o canal do presente literario nesta tela. Ainda assim, alguma ressonancia ficou viva aqui."
+          : "A biblioteca poetica encontrou um desvio na busca. Ainda assim, alguma ressonancia ficou viva aqui."
   };
 }
 
 function renderGiftLead(source) {
   if (source === "associated_poem") {
-    return "Nem sempre o encontro vem por espelho exato. Às vezes ele aparece por vizinhança de imagens e linguagem.";
+    return "As suas palavras me lembraram uma poesia que li ha tempo. Nao era o mesmo espelho, mas havia uma vizinhanca de imagens entre os dois textos.";
   }
   if (source === "iza_blessing" || source === "fallback") {
-    return "Nem todo eco chega por um livro já aberto. Às vezes ele nasce do que ficou vibrando no seu texto.";
+    return "Nem todo eco chega por um livro ja aberto. As vezes ele nasce do que continuou vibrando no seu texto.";
   }
-  return "Nem sempre a trilha termina onde acaba. Às vezes ela ecoa em outro verso.";
+  return "As suas palavras me lembraram uma poesia que li ha tempo. Separei este fragmento para devolver vida ao que ainda esta se movendo no seu texto.";
 }
 
 function resolveFinalAnchorText() {
@@ -3226,11 +3342,15 @@ function buildFinalSummary() {
     centerSemanticTail: normalizeInlineText(state.centerSemanticTail),
     sceneAnchor: resolveConcreteSceneAnchorText()
   };
-  const keywords = extractJourneyKeywords();
+  const keywordCloud = extractJourneyKeywordData(12);
+  const keywords = keywordCloud.slice(0, 6).map((item) => item.text);
   const journeySynthesis = buildJourneySynthesis(base, keywords);
+  const continuationInvitation = buildContinuationInvitation({ ...base, keywords }, keywordCloud);
   const summary = {
     ...base,
     keywords,
+    keywordCloud,
+    continuationInvitation,
     journeySynthesis
   };
   const rubric = buildJourneyRubric(summary);
@@ -3263,14 +3383,24 @@ function buildFinalRecordTranscript(payload) {
     parts.push(`\nPALAVRAS-CHAVE:\n${payload.keywords.join(", ")}\n`);
   }
 
+  if (payload.keywordCloud?.length) {
+    parts.push(`\nCONSTELACAO DE PALAVRAS:\n${payload.keywordCloud.slice(0, 12).map((item) => item.text).join(" · ")}\n`);
+  }
+
+  if (payload.continuationInvitation) {
+    parts.push(`\nCHAMADO PARA CONTINUAR:\n${payload.continuationInvitation}\n`);
+  }
+
   if (payload.literaryGift?.fragment) {
+    const searchInvitation = buildGiftSearchInvitation(payload.literaryGift);
     parts.push(
-      `\nPRESENTE LITERARIO DA IZA:\n${payload.literaryGift.intro ? payload.literaryGift.intro + "\n\n" : ""}${payload.literaryGift.fragment}\n` +
-      `Credito: ${payload.literaryGift.author || "IZA"} - ${payload.literaryGift.title || "Presente"}\n`
+      `\nRESSONANCIA POETICA:\n${payload.literaryGift.intro ? payload.literaryGift.intro + "\n\n" : ""}${payload.literaryGift.fragment}\n` +
+      `${searchInvitation ? searchInvitation + "\n" : ""}` +
+      `Referencia: ${payload.literaryGift.author || "IZA"}${payload.literaryGift.title ? " - " + payload.literaryGift.title : ""}\n`
     );
   }
 
-  return parts.join("");
+  return parts.join("").replace(/ Â· /g, " | ");
 }
 
 function renderKeywordTags(keywords) {
@@ -3283,34 +3413,63 @@ function renderKeywordTags(keywords) {
   `;
 }
 
+function renderKeywordCloud(keywordCloud) {
+  const values = (keywordCloud || []).filter((item) => item?.text);
+  if (!values.length) return "";
+  return `
+    <div class="iza-word-cloud" aria-label="Constelacao de palavras">
+      ${values.map((item) => `
+        <span class="iza-word-cloud__item iza-word-cloud__item--${item.tone}" style="font-size:${item.size}rem">
+          ${escapeHtml(item.text)}
+        </span>
+      `).join("")}
+    </div>
+  `;
+}
+
+function buildGiftSearchInvitation(gift) {
+  if (!gift?.author || gift?.author === "IZA") {
+    return "Se esse eco voltar depois, continua escrevendo a partir dele.";
+  }
+  const reference = gift?.title
+    ? `"${gift.title}", de ${gift.author}`
+    : gift.author;
+  return `Esqueci o restante, mas, se tiver curiosidade, procure depois por ${reference}.`;
+}
+
 function renderLiteraryGift(payload) {
   const activeKeywords = payload.literaryGift?.matchedKeywords?.length
     ? payload.literaryGift.matchedKeywords
     : (payload.keywords || []);
   const keywordsHtml = renderKeywordTags(activeKeywords);
+  const cloudHtml = renderKeywordCloud(payload.keywordCloud || []);
 
   if (payload.literaryGiftStatus === "loading") {
     return `
       <div class="iza-gift">
-        <p class="iza-section-title"><strong>Presente literário da IZA</strong></p>
-        <p class="iza-copy">Antes de encerrar, recolhi alguns rastros do que você deixou pelo caminho.</p>
-        <p class="iza-copy iza-copy--soft">Separei palavras que insistiram em permanecer acesas.</p>
+        <p class="iza-section-title"><strong>Ressonancia poetica</strong></p>
+        <p class="iza-copy">As suas palavras ainda estao acesas aqui. Estou ouvindo o que nelas pede continuidade.</p>
+        <p class="iza-copy iza-copy--soft">Enquanto procuro um fragmento para devolver, deixo esta constelacao respirar um pouco.</p>
+        ${cloudHtml}
         ${keywordsHtml}
-        <div class="message">IZA está procurando um eco poético para essas pistas...</div>
+        <div class="message">IZA esta procurando um eco poetico para essas pistas...</div>
       </div>
     `;
   }
 
   const gift = payload.literaryGift || enrichFallbackLiteraryGift(buildFallbackLiteraryGift(payload.keywords || []), payload);
   const credit = [gift.author, gift.title].filter(Boolean).join(" - ");
+  const searchInvitation = buildGiftSearchInvitation(gift);
 
   return `
     <div class="iza-gift">
-      <p class="iza-section-title"><strong>Presente literário da IZA</strong></p>
+      <p class="iza-section-title"><strong>Ressonancia poetica</strong></p>
       <p class="iza-copy">${escapeHtml(renderGiftLead(gift.source))}</p>
       <p class="iza-copy iza-copy--soft">${escapeHtml(gift.intro || "")}</p>
+      ${cloudHtml}
       ${keywordsHtml}
       <div class="message">${escapeHtml(gift.fragment || "").replace(/\n/g, "<br>")}</div>
+      <p class="iza-copy iza-copy--soft">${escapeHtml(searchInvitation)}</p>
       <p class="iza-gift__meta">${escapeHtml(credit)}</p>
     </div>
   `;
@@ -3774,6 +3933,15 @@ function renderFinalScreen(payload, fromHistory = false) {
     `
     : "";
 
+  const continuationHtml = payload.continuationInvitation
+    ? `
+      <div class="iza-gift iza-gift--continuation">
+        <p class="iza-section-title"><strong>Para seguir escrevendo</strong></p>
+        <div class="message">${escapeHtml(payload.continuationInvitation)}</div>
+      </div>
+    `
+    : "";
+
   render(
     renderCardShell(`
       <div class="iza-top">
@@ -3792,6 +3960,7 @@ function renderFinalScreen(payload, fromHistory = false) {
 
       ${summaryBlocks ? `<div class="iza-summary-grid">${summaryBlocks}</div>` : ""}
       ${synthesisHtml}
+      ${continuationHtml}
 
       <div id="giftPanel">
         ${renderLiteraryGift(payload)}
@@ -3807,7 +3976,7 @@ function renderFinalScreen(payload, fromHistory = false) {
       </div>
 
       <p class="iza-copy iza-copy--quiet">
-        Seu percurso ficou guardado com síntese, palavras-chave e um eco final da IZA.
+        Seu percurso ficou guardado com sintese, constelacao de palavras e um eco final da IZA para quando voce quiser voltar.
       </p>
 
       ${renderHistoryNav("")}
@@ -4364,6 +4533,67 @@ window.verifyCheckinEmail = async function () {
   saveStateToLocal();
   updateWelcomeIdentityUI();
 };
+
+function buildFallbackLiteraryGift(payloadOrKeywords) {
+  const payload = Array.isArray(payloadOrKeywords)
+    ? { keywords: payloadOrKeywords }
+    : (payloadOrKeywords || {});
+  const keywords = payload.keywords || [];
+  const seed = keywords[0] || "palavra";
+  const companion = keywords[1] || "eco";
+  const sceneAnchor = clipText(payload.sceneAnchor || resolveConcreteSceneAnchorText(), 110);
+  const finalAnchor = clipText(payload.lastText || resolveFinalAnchorText(), 110);
+  let fragment = `Guarde ${seed}. Quando a trilha parece terminar, ela ainda conversa com ${companion}. O que ficou vivo aqui talvez seja o comeco de outra frase.`;
+
+  if (sceneAnchor && finalAnchor && sceneAnchor !== finalAnchor) {
+    fragment = `Guarde esta imagem: "${sceneAnchor}". E guarde tambem esta linha: "${finalAnchor}". Entre ${seed} e ${companion}, ainda ha uma frase pedindo continuidade.`;
+  } else if (sceneAnchor) {
+    fragment = `Guarde esta imagem: "${sceneAnchor}". Entre ${seed} e ${companion}, ela ainda pede outra frase.`;
+  } else if (finalAnchor) {
+    fragment = `Guarde esta linha: "${finalAnchor}". Entre ${seed} e ${companion}, ela ainda pede outra frase.`;
+  }
+
+  return {
+    source: "fallback",
+    seed,
+    intro: "As suas palavras ficaram acesas aqui. A biblioteca nao me abriu um verso com nome, mas alguma ressonancia continuou viva.",
+    fragment,
+    author: "IZA",
+    title: "Eco que ficou",
+    matchedKeywords: [seed, companion].filter(Boolean)
+  };
+}
+
+function buildFinalRecordTranscript(payload) {
+  const parts = [payload.baseTranscript || buildTranscript() + buildFinalDraftBlock()];
+
+  if (payload.journeySynthesis) {
+    parts.push(`\n---\nSINTESE DA JORNADA:\n${payload.journeySynthesis}\n`);
+  }
+
+  if (payload.keywords?.length) {
+    parts.push(`\nPALAVRAS-CHAVE:\n${payload.keywords.join(", ")}\n`);
+  }
+
+  if (payload.keywordCloud?.length) {
+    parts.push(`\nCONSTELACAO DE PALAVRAS:\n${payload.keywordCloud.slice(0, 12).map((item) => item.text).join(" | ")}\n`);
+  }
+
+  if (payload.continuationInvitation) {
+    parts.push(`\nCHAMADO PARA CONTINUAR:\n${payload.continuationInvitation}\n`);
+  }
+
+  if (payload.literaryGift?.fragment) {
+    const searchInvitation = buildGiftSearchInvitation(payload.literaryGift);
+    parts.push(
+      `\nRESSONANCIA POETICA:\n${payload.literaryGift.intro ? payload.literaryGift.intro + "\n\n" : ""}${payload.literaryGift.fragment}\n` +
+      `${searchInvitation ? searchInvitation + "\n" : ""}` +
+      `Referencia: ${payload.literaryGift.author || "IZA"}${payload.literaryGift.title ? " - " + payload.literaryGift.title : ""}\n`
+    );
+  }
+
+  return parts.join("");
+}
 
 // init
 document.addEventListener("DOMContentLoaded", () => {

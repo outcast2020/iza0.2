@@ -325,10 +325,10 @@
       name: "nao_consigo",
       pattern: /\bn[aã]o\s+consigo\s+([^.!?\n\r]+)/i,
       responses: [
-        "Você escreveu: “não consigo {0}”. O que acontece logo antes dessa trava?",
-        "Quando vem “não consigo {0}”, o que você tenta acertar de primeira?",
-        "O que deixaria “{0}” 10% mais possível hoje?",
-        "Se pudesse começar torto, como começaria “{0}” em uma linha?"
+        "Quando voce diz que nao consegue {0}, onde isso emperra primeiro?",
+        "O que costuma acontecer logo antes de voce travar em {0}?",
+        "O que deixaria {0} 10% mais possivel hoje?",
+        "Se pudesse comecar torto, como comecaria {0} em uma linha?"
       ]
     },
     {
@@ -363,18 +363,18 @@
       name: "eu_quero",
       pattern: /\beu\s+quero\s+([^.!?\n\r]+)/i,
       responses: [
-        "Você quer {0}. Como isso fica em uma frase simples?",
-        "Qual sinal concreto mostraria que você alcançou {0}?",
-        "Em {0}, o que é essencial e o que é enfeite?"
+        "Voce quer {0}. Como isso fica em uma frase simples?",
+        "Qual sinal concreto mostraria que voce alcancou {0}?",
+        "Em {0}, o que e essencial e o que e enfeite?"
       ]
     },
     {
       name: "preciso_tenho",
       pattern: /\b(eu\s+preciso|tenho\s+que|devo|precisaria)\s+([^.!?\n\r]+)/i,
       responses: [
-        "Você disse “{0} {1}”. Isso vem de você ou de exigência externa?",
-        "O que acontece se você não {1} agora?",
-        "Qual parte de “{1}” é negociável e qual é inegociável?"
+        "Voce disse '{0} {1}'. Isso vem de voce ou de exigencia externa?",
+        "O que acontece se voce nao {1} agora?",
+        "Qual parte de '{1}' e negociavel e qual e inegociavel?"
       ]
     },
     {
@@ -390,26 +390,26 @@
       name: "contraste",
       pattern: /\b(?:mas|por[eé]m|s[oó]\s+que)\b\s*([\s\S]+)/i,
       responses: [
-        "Você abriu um contraste. O que bate de frente com o quê, exatamente?",
-        "Depois do contraste (“{0}”), o que muda de sentido?",
-        "Qual lado desse contraste você quer defender mais?"
+        "Voce abriu um contraste. O que bate de frente com o que, exatamente?",
+        "Depois de '{0}', o que muda de sentido?",
+        "Qual lado desse contraste voce quer sustentar mais?"
       ]
     },
     {
       name: "porque",
       pattern: /\bporque\b\s*([\s\S]+)/i,
       responses: [
-        "Você trouxe um “porque”. Qual é o núcleo disso em 6 a 10 palavras?",
-        "Esse “porque” explica ou justifica? Qual dos dois?",
-        "Que evidência concreta sustenta esse “porque”?"
+        "Voce trouxe um 'porque'. Qual e o nucleo disso em 6 a 10 palavras?",
+        "Esse 'porque' explica ou justifica? Qual dos dois?",
+        "Que evidencia concreta sustenta esse 'porque'?"
       ]
     },
     {
       name: "definicao",
       pattern: /\b(significa|quer\s+dizer|se\s+trata|[ée]\s+quando|[ée]\s+tipo)\b\s*([\s\S]+)/i,
       responses: [
-        "Você está definindo algo. Para quem você está explicando isso?",
-        "Qual exemplo curto prova essa definição?",
+        "Voce esta definindo algo. Para quem voce esta explicando isso?",
+        "Qual exemplo curto prova essa definicao?",
         "Se deixasse em uma frase, qual seria?"
       ]
     },
@@ -417,36 +417,36 @@
       name: "pergunta",
       pattern: /\?+\s*$/i,
       responses: [
-        "Vou te devolver uma pergunta menor: o que você quer decidir aqui?",
+        "Vou te devolver uma pergunta menor: o que voce quer decidir aqui?",
         "O que torna essa pergunta importante agora?",
-        "Qual pergunta mais honesta está por trás dela?"
+        "Qual pergunta mais honesta esta por tras dela?"
       ]
     },
     {
       name: "comparacao",
       pattern: /\b(como|igual|diferente|parece|semelhante|comparar)\b([\s\S]+)/i,
       responses: [
-        "Você comparou coisas. O que essa comparação precisa revelar?",
-        "O que é parecido na superfície e diferente por dentro?",
-        "Se tirar a comparação, qual ideia principal sobra?"
+        "Voce comparou coisas. O que essa comparacao precisa revelar?",
+        "O que e parecido na superficie e diferente por dentro?",
+        "Se tirar a comparacao, qual ideia principal sobra?"
       ]
     },
     {
       name: "tempo",
       pattern: /\b(hoje|amanh[aã]|prazo|correria|r[aá]pido|urgente|semana|m[eê]s|agora)\b([\s\S]*)?/i,
       responses: [
-        "Entendi que o tempo pesa. Qual é o mínimo aceitável de texto para hoje?",
+        "Entendi que o tempo pesa. Qual e o minimo aceitavel de texto para hoje?",
         "Se tivesse 12 minutos, o que escreveria primeiro?",
-        "O que pode ficar imperfeito agora para você conseguir andar?"
+        "O que pode ficar imperfeito agora para voce conseguir andar?"
       ]
     },
     {
       name: "estrutura_texto",
       pattern: /\b(introdu[cç][aã]o|conclus[aã]o|par[aá]grafo|tese|resumo|artigo|cap[ií]tulo|metodologia|resultados)\b([\s\S]*)?/i,
       responses: [
-        "Você citou estrutura ({0}). Qual função ela precisa cumprir: situar, provar ou fechar?",
+        "Voce citou estrutura ({0}). Qual funcao ela precisa cumprir: situar, provar ou fechar?",
         "Se seu {0} tivesse 3 frases, quais seriam?",
-        "Qual ideia não pode faltar no {0}?"
+        "Qual ideia nao pode faltar no {0}?"
       ]
     },
     {
@@ -454,8 +454,8 @@
       pattern: /\b(cena|imagem|met[aá]fora|s[ií]mbolo|po[eé]tico|descrever|mostrar)\b([\s\S]*)?/i,
       responses: [
         "Se isso virasse uma cena curta, onde acontece e quem aparece primeiro?",
-        "Qual objeto simples carrega o sentido do que você quer dizer?",
-        "Em vez de explicar, o que você pode mostrar em uma ação?"
+        "Qual objeto simples carrega o sentido do que voce quer dizer?",
+        "Em vez de explicar, o que voce pode mostrar numa acao?"
       ]
     },
     {
@@ -471,9 +471,9 @@
       name: "excesso",
       pattern: /\b(confuso|embolado|muito|demais|exagerado|longo|bagun[cç]ado|perdido)\b([\s\S]*)?/i,
       responses: [
-        "Você percebeu excesso. O que dá para cortar sem perder o núcleo?",
-        "Se deixasse só 2 frases, quais ficariam?",
-        "O que aqui é explicação — e o que é essencial?"
+        "Voce percebeu excesso. O que da para cortar sem perder o nucleo?",
+        "Se deixasse so 2 frases, quais ficariam?",
+        "O que aqui e explicacao e o que e essencial?"
       ]
     },
     {
@@ -509,19 +509,19 @@
   // Personality overrides (como você já tinha)
   const RULE_OVERRIDES = {
     A: {
-      default: ["Qual palavra-chave desse trecho você quer sustentar?"],
-      nao_sei: ["Sem pressa: qual parte você já sabe com certeza?"]
+      default: ["Qual parte desse trecho voce quer sustentar?"],
+      nao_sei: ["Sem pressa: o que voce ja sabe com certeza?"]
     },
     B: {
-      eu_sinto: ["Obrigado por dividir isso. Quando vem {0}, o que esse tema te pede com mais cuidado?"],
-      medo: ["Tô com você nisso. Se o {0} baixasse um pouco, o que você conseguiria dizer agora?"],
-      default: ["Entendi você. Qual parte desse trecho você quer cuidar melhor agora?"]
+      eu_sinto: ["Obrigada por dividir isso. Quando vem {0}, o que esse tema te pede com mais cuidado?"],
+      medo: ["To com voce nisso. Se o {0} baixasse um pouco, o que ja daria para dizer?"],
+      default: ["Entendi. Qual parte desse trecho voce quer cuidar melhor agora?"]
     },
     C: {
-      estrutura_texto: ["Direto: qual função exata do {0} no texto: abrir, provar ou fechar?"],
-      porque: ["Direto: qual prova concreta sustenta esse “porque” em uma linha?"],
-      excesso: ["Direto: corte para 2 frases. Quais ficam?"],
-      default: ["Direto: formule sua tese em uma frase objetiva."]
+      estrutura_texto: ["Qual funcao exata do {0} no texto: abrir, sustentar ou fechar?"],
+      porque: ["Qual prova concreta sustenta esse 'porque' em uma linha?"],
+      excesso: ["Corta para 2 frases. Quais ficam?"],
+      default: ["Formula sua tese em uma frase objetiva."]
     },
     D: {
       default: ["Qual é o núcleo disso?"],
@@ -529,10 +529,10 @@
       pergunta: ["O que essa pergunta quer decidir?"]
     },
     H: {
-      default: ["Tem um núcleo vivo aqui. Qual parte você quer ampliar primeiro?"],
-      nao_consigo: ["Você trouxe uma trava em “{0}”. Quer acolher o ponto sensível e definir um próximo passo concreto?"],
+      default: ["Tem um nucleo vivo aqui. Qual parte voce quer ampliar primeiro?"],
+      nao_consigo: ["Tem uma trava em '{0}'. O que pede cuidado e o que pede decisao?"],
       eu_sinto: ["Isso tem carga emocional ({0}). O que te acolhe e, ao mesmo tempo, te move no texto?"],
-      contraste: ["Há um contraste aqui. Qual lado pede cuidado e qual lado pede decisão?"],
+      contraste: ["Ha um contraste aqui. Qual lado pede cuidado e qual lado pede decisao?"],
       estrutura_texto: ["Vamos equilibrar forma e verdade: qual função o {0} precisa cumprir agora?"]
     }
   };
@@ -541,81 +541,81 @@
   const RULE_TRACK_OVERRIDES = {
     iniciante: {
       default: [
-        "Traga um detalhe concreto: lugar + alguém + um gesto.",
-        "Se fosse uma cena de 8 segundos, o que aparece?"
+        "Se puder, me mostra isso num detalhe concreto: lugar, alguem e um gesto.",
+        "Se isso virasse uma cena bem curta, o que apareceria primeiro?"
       ],
       cena_imagem: [
-        "Cena curta: onde você está, quem está com você, e qual gesto acontece?",
-        "Escolha um objeto simples e deixe ele carregar o sentido."
+        "Me da uma cena curta: onde voce esta, quem aparece e o que acontece?",
+        "Escolhe um objeto simples e deixa ele carregar o sentido."
       ],
       travado: [
-        "Se estiver travado, escreva só a imagem: um lugar + um gesto."
+        "Se travou, comeca so pela imagem: um lugar, um corpo, um gesto."
       ],
       porque: [
-        "Em vez de explicar, mostre em 1 exemplo pequeno."
+        "Em vez de explicar mais, me mostra isso num exemplo pequeno."
       ]
     },
     intermediaria: {
       default: [
-        "Escreva 1 frase de tese. Depois, 1 evidência concreta.",
-        "Qual é a afirmação central — e qual prova sustenta?"
+        "Tenta me dar uma frase de ideia central e, logo depois, uma prova.",
+        "Qual afirmacao voce quer sustentar e com que exemplo?"
       ],
       estrutura_texto: [
-        "Defina função + conteúdo: o que entra e o que sai do {0}?",
-        "Se o {0} tiver 3 frases: contexto → tese → prova. Quais são?"
+        "Que funcao esse {0} precisa cumprir no texto: abrir, sustentar ou fechar?",
+        "Se o {0} tivesse 3 frases, quais seriam: contexto, tese e prova?"
       ],
       porque: [
-        "Transforme o “porque” em evidência: dado, citação ou exemplo (1 linha)."
+        "Transforma esse 'porque' em evidencia: dado, citacao ou exemplo curto."
       ],
       excesso: [
-        "Regra de corte: 2 frases (tese + prova)."
+        "Faz um corte de 2 frases: ideia e prova."
       ]
     },
     inspirada: {
       default: [
-        "Segue no fluxo: escreve mais um pouco sem se vigiar.",
-        "Coloque ritmo: uma frase curta, outra longa."
+        "Segue no fluxo. Escreve mais um pouco antes de julgar.",
+        "Deixa uma frase curta puxar a proxima."
       ],
       eu_sinto: [
-        "Deixe {0} virar imagem (não explique). O que você vê?",
-        "Qual som/cheiro/cor combina com {0}?"
+        "Deixa {0} virar imagem, sem explicar. O que aparece?",
+        "Que som, cor ou textura combina com {0}?"
       ],
       comparacao: [
-        "A comparação pode virar metáfora: qual imagem segura o sentido?"
+        "Se essa comparacao virasse metafora, qual imagem seguraria o sentido?"
       ],
       estrutura_texto: [
-        "Sem formatar demais: guarda o eixo e segue no fluxo."
+        "Sem formatar demais agora. Guarda o eixo e segue."
       ]
     }
   };
 
   const ROGERIAN_RULE_REFRESH = {
     travado: [
-      "Quando isso fica {0}, onde a escrita para primeiro: abertura, centro ou final?",
-      "Tem algo que você parece proteger quando fica {0}. O que não quer perder no texto?",
-      "Se eu te pedisse só uma frase possível agora, qual viria mesmo assim?"
+      "Quando isso trava, em que parte a escrita para primeiro: comeco, meio ou fecho?",
+      "Quando voce fica {0}, o que esta tentando proteger no texto?",
+      "Se eu te pedisse so uma frase possivel agora, qual viria?"
     ],
     eu_sinto: [
-      "Tem algo de {0} no que você trouxe. Onde isso encosta mais forte no texto?",
-      "Se esse {0} virasse cena, o que a gente veria primeiro?",
-      "Esse {0} te aproxima da frase ou faz você recuar dela?"
+      "Tem algo de {0} no que voce trouxe. Onde isso pega mais forte no texto?",
+      "Se esse {0} virasse cena, o que apareceria primeiro?",
+      "Esse {0} te aproxima do texto ou faz voce recuar?"
     ],
     medo: [
-      "Você nomeou {0}. A reação de quem pesa mais aqui: leitor, você ou o tema?",
-      "Quando entra {0}, o que você tenta manter sob controle no texto?",
-      "Se o {0} baixasse um pouco, o que já daria para dizer agora?",
-      "Se for “{0} de {1}”, qual é o menor risco que ainda vale assumir hoje?"
+      "Voce nomeou {0}. Reacao de quem pesa mais aqui: leitor, voce ou tema?",
+      "Quando entra {0}, o que voce tenta manter sob controle no texto?",
+      "Se o {0} baixasse um pouco, o que ja daria para dizer?",
+      "Se for '{0} de {1}', qual e o menor risco que ainda vale assumir hoje?"
     ],
     nao_sei: [
-      "Tem uma oscilação aqui. Entre quais duas direções você está?",
-      "Mesmo dentro dessa dúvida, o que você já sabe com certeza?",
+      "Tem uma oscilacao aqui. Entre quais duas direcoes voce esta?",
+      "Mesmo na duvida, o que voce ja sabe com certeza?",
       "Qual pergunta, se ganhasse resposta, soltaria essa parte do texto?"
     ],
     default: [
-      "No que você disse, o que está mais vivo agora?",
-      "Se eu devolver isso em uma palavra-chave, qual você sustenta?",
-      "O que você quer que continue ecoando no leitor depois disso?",
-      "O próximo passo aqui é nomear melhor, mostrar uma cena ou sustentar a ideia?"
+      "O que esta mais vivo nisso agora?",
+      "Qual parte desse trecho voce quer sustentar melhor?",
+      "O que voce quer que continue ecoando no leitor depois disso?",
+      "Daqui, o proximo passo e nomear melhor, mostrar uma cena ou sustentar a ideia?"
     ]
   };
 
@@ -628,42 +628,42 @@
 
   function refinePersonalityOverrides() {
     RULE_OVERRIDES.A.default = [
-      "Qual palavra-chave desse trecho você quer sustentar?",
-      "O que aqui merece mais escuta antes de seguir?"
+      "Qual parte desse trecho voce quer sustentar?",
+      "O que aqui pede mais escuta antes de seguir?"
     ];
     RULE_OVERRIDES.A.nao_sei = [
-      "Sem pressa: qual parte você já sabe com certeza?",
-      "Se você não decidir tudo agora, qual pequena certeza fica?"
+      "Sem pressa: o que voce ja sabe com certeza?",
+      "Se voce nao decidir tudo agora, qual pequena certeza fica?"
     ];
 
     RULE_OVERRIDES.B.eu_sinto = [
       "Obrigada por dividir isso. Quando vem {0}, o que esse tema te pede com mais cuidado?",
-      "Fico ouvindo {0} no que você disse. Onde isso pede mais delicadeza?"
+      "Fico com {0} no que voce disse. Onde isso pede mais delicadeza?"
     ];
     RULE_OVERRIDES.B.medo = [
-      "Tô com você nisso. Se o {0} baixasse um pouco, o que você conseguiria dizer agora?",
-      "Vamos chegar perto disso sem forçar. O que o {0} ainda deixa dizer?"
+      "To com voce nisso. Se o {0} baixasse um pouco, o que ja daria para dizer?",
+      "Vamos chegar perto disso sem forcar. O que o {0} ainda deixa dizer?"
     ];
     RULE_OVERRIDES.B.default = [
-      "Entendi você. Qual parte desse trecho você quer cuidar melhor agora?",
-      "Do que você disse, qual ponto merece mais escuta antes de seguir?"
+      "Entendi. Qual parte desse trecho voce quer cuidar melhor agora?",
+      "Do que voce disse, qual ponto merece mais escuta antes de seguir?"
     ];
 
     RULE_OVERRIDES.C.estrutura_texto = [
-      "Direto: qual função exata do {0} no texto: abrir, provar ou fechar?",
-      "Recorte: o {0} existe para situar, sustentar ou concluir?"
+      "Qual funcao exata do {0} no texto: abrir, sustentar ou fechar?",
+      "Recorta: o {0} existe para situar, provar ou concluir?"
     ];
     RULE_OVERRIDES.C.porque = [
-      "Direto: qual prova concreta sustenta esse “porque” em uma linha?",
-      "Se esse “porque” fosse testado agora, qual evidência ficaria de pé?"
+      "Qual prova concreta sustenta esse 'porque' em uma linha?",
+      "Se esse 'porque' fosse testado agora, qual evidencia ficaria de pe?"
     ];
     RULE_OVERRIDES.C.excesso = [
-      "Direto: corte para 2 frases. Quais ficam?",
+      "Corta para 2 frases. Quais ficam?",
       "O que sai sem derrubar a ideia?"
     ];
     RULE_OVERRIDES.C.default = [
-      "Direto: formule sua tese em uma frase objetiva.",
-      "Recorte o ponto central em uma frase."
+      "Formula sua tese em uma frase objetiva.",
+      "Recorta o ponto central em uma frase."
     ];
 
     RULE_OVERRIDES.D.default = ["Qual é o núcleo disso?", "Diga o centro em uma frase."];
@@ -671,23 +671,23 @@
     RULE_OVERRIDES.D.pergunta = ["O que essa pergunta quer decidir?", "Qual é o ponto da pergunta?"];
 
     RULE_OVERRIDES.H.default = [
-      "Tem um núcleo vivo aqui. Qual parte você quer ampliar primeiro?",
-      "Aqui há ao mesmo tempo escuta e recorte. Qual lado pede mais trabalho agora?"
+      "Tem um nucleo vivo aqui. Qual parte voce quer ampliar primeiro?",
+      "Aqui ha ao mesmo tempo escuta e recorte. Qual lado pede mais trabalho agora?"
     ];
     RULE_OVERRIDES.H.nao_consigo = [
-      "Você trouxe uma trava em “{0}”. Quer acolher o ponto sensível e definir um próximo passo concreto?",
-      "Tem uma trava aqui. O que pede cuidado e o que pede decisão?"
+      "Tem uma trava em '{0}'. O que pede cuidado e o que pede decisao?",
+      "Quer acolher o ponto sensivel e definir um proximo passo concreto?"
     ];
     RULE_OVERRIDES.H.eu_sinto = [
       "Isso tem carga emocional ({0}). O que te acolhe e, ao mesmo tempo, te move no texto?",
       "O que em {0} pede escuta e o que em {0} pede forma?"
     ];
     RULE_OVERRIDES.H.contraste = [
-      "Há um contraste aqui. Qual lado pede cuidado e qual lado pede decisão?",
+      "Ha um contraste aqui. Qual lado pede cuidado e qual lado pede decisao?",
       "Onde esse contraste te divide e onde ele te esclarece?"
     ];
     RULE_OVERRIDES.H.estrutura_texto = [
-      "Vamos equilibrar forma e verdade: qual função o {0} precisa cumprir agora?",
+      "Vamos equilibrar forma e verdade: qual funcao o {0} precisa cumprir agora?",
       "Sem perder a escuta: que forma ajuda esse {0} a respirar melhor?"
     ];
   }
