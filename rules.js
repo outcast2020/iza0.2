@@ -13,12 +13,12 @@
     },
     {
       key: "saber_interpretar",
-      label: "saber e interpretacao",
+      label: "saber e interpretação",
       markers: ["compreender", "entender", "saber", "conhecer", "interpretar", "explicar", "sentido", "significado", "verdade"]
     },
     {
       key: "arte_tecnica",
-      label: "arte, tecnica e juizo",
+      label: "arte, técnica e juízo",
       markers: ["arte", "tecnica", "oficio", "metodo", "criterio", "julgar", "julgamento", "pratica", "escuta", "interprete"]
     },
     {
@@ -38,12 +38,12 @@
     },
     {
       key: "conflito_distincao",
-      label: "conflito e distincao",
+      label: "conflito e distinção",
       markers: ["conflito", "atrito", "tensao", "opostos", "distincao", "diferenca", "contradicao", "paradoxo", "logica"]
     },
     {
       key: "misterio_limite",
-      label: "misterio e limite",
+      label: "mistério e limite",
       markers: ["misterio", "porta", "entrada", "limite", "furo", "abismo", "silencio", "calar"]
     }
   ];
@@ -54,11 +54,11 @@
       pattern: /\b(?:linguagem|palavra|idioma|discurso)\b[\s\S]{0,90}\b(?:mundo|unidade|coexist[eê]ncia|co-exist[eê]ncia|comum|particularidade|paradoxo|contradic|logica)\b/i,
       responses: [
         "Se cada linguagem abre um mundo, o que ainda permanece comum entre esses mundos?",
-        "Quando voce fala em linguagem, esta pensando numa ponte ou num limite?",
-        "A unidade que voce busca esta nas palavras, ou no uso que fazemos delas?"
+        "Quando você fala em linguagem, está pensando numa ponte ou num limite?",
+        "A unidade que você busca está nas palavras, ou no uso que fazemos delas?"
       ],
       memory: [
-        "Se isso vale para toda linguagem, vale tambem para o silencio?"
+        "Se isso vale para toda linguagem, vale também para o silêncio?"
       ],
       styleFamily: "socratic",
       markerKeys: ["linguagem_mundo", "totalidade_regra"],
@@ -69,9 +69,9 @@
       name: "socratic_saber_interpretar",
       pattern: /\b(?:compreender|entender|saber|conhecer|interpretar|explicar)\b[\s\S]{0,80}\b(?:mist[eé]rio|linguagem|arte|poesia|singularidade|alteridade|verdade|mundo|tema)\b/i,
       responses: [
-        "Voce diria que compreender isso e o mesmo que saber explica-lo?",
+        "Você diria que compreender isso é o mesmo que saber explicá-lo?",
         "Falar bem disso prova conhecimento, ou apenas familiaridade?",
-        "O que aqui e interpretacao, e o que aqui seria conhecimento?"
+        "O que aqui é interpretação, e o que aqui seria conhecimento?"
       ],
       styleFamily: "socratic",
       markerKeys: ["saber_interpretar"],
@@ -82,8 +82,8 @@
       name: "socratic_paradoxo",
       pattern: /\b(?:paradoxo|paradoxos|contradic|logica|logicas|particularidade)\b/i,
       responses: [
-        "O que faz disso uma contradicao real, e nao apenas dois pontos de vista?",
-        "Voce esta descrevendo a coisa, ou a dificuldade de pensa-la?",
+        "O que faz disso uma contradição real, e não apenas dois pontos de vista?",
+        "Você está descrevendo a coisa, ou a dificuldade de pensá-la?",
         "Essas logicas convivem no mesmo plano, ou cada uma vale em um contexto?"
       ],
       styleFamily: "socratic",
@@ -95,9 +95,9 @@
       name: "socratic_arte_tecnica",
       pattern: /\b(?:arte|tecnica|t[eé]cnica|of[ií]cio|dom|inspira[cç][aã]o|entusiasmo)\b/i,
       responses: [
-        "Isso lhe parece arte, tecnica ou impulso?",
-        "Quem julgaria melhor isso: quem pratica, quem interpreta ou quem escuta?",
-        "Se isso e uma tecnica, por que nao aparece do mesmo modo em todos os casos?"
+        "Isso lhe parece arte, técnica ou impulso?",
+        "Quem julgaria melhor isso: quem prática, quem interpreta ou quem escuta?",
+        "Se isso é uma técnica, por que não aparece do mesmo modo em todos os casos?"
       ],
       styleFamily: "socratic",
       markerKeys: ["arte_tecnica", "poesia_inspiracao"],
@@ -109,8 +109,8 @@
       pattern: /\b(?:alteridade|outro|singularidade|coexist[eê]ncia|conviv[eê]ncia|limita)\b/i,
       responses: [
         "O outro limita sua singularidade, ou a torna visivel?",
-        "Sem o outro, sua singularidade seria menos ameacada ou menos nitida?",
-        "Voce quer proteger sua singularidade, ou compreende-la melhor diante do outro?"
+        "Sem o outro, sua singularidade seria menos ameaçada ou menos nítida?",
+        "Você quer proteger sua singularidade, ou compreendê-la melhor diante do outro?"
       ],
       memory: [
         "Se o outro desaparecesse, o conflito desapareceria junto?"
@@ -124,9 +124,9 @@
       name: "socratic_totalidade",
       pattern: /\b(?:cada|todo|toda|todos|todas)\b[\s\S]{0,80}\b(?:linguagem|mundo|arte|ser|palavra|vers[aã]o|unidade)\b/i,
       responses: [
-        "Se isso vale para cada caso, vale tambem para o todo?",
-        "O que muda quando voce passa do caso particular para a regra geral?",
-        "Essa afirmacao vale sempre, ou apenas deste ponto de vista?"
+        "Se isso vale para cada caso, vale também para o todo?",
+        "O que muda quando você passa do caso particular para a regra geral?",
+        "Essa afirmação vale sempre, ou apenas deste ponto de vista?"
       ],
       styleFamily: "socratic",
       markerKeys: ["totalidade_regra", "linguagem_mundo"],
@@ -138,8 +138,8 @@
       pattern: /\b(?:conflito|atrito|impasse|choque|tens[aã]o)\b/i,
       responses: [
         "Esse conflito opoe duas ideias, dois desejos ou dois modos de nomear a mesma coisa?",
-        "Se voce tivesse de separar os dois polos do conflito, quais seriam?",
-        "O conflito esta no objeto, ou no modo como voce se coloca diante dele?"
+        "Se você tivesse de separar os dois polos do conflito, quais seriam?",
+        "O conflito está no objeto, ou no modo como você se coloca diante dele?"
       ],
       styleFamily: "socratic",
       markerKeys: ["conflito_distincao", "alteridade"],
@@ -150,9 +150,9 @@
       name: "socratic_misterio",
       pattern: /\b(?:mist[eé]rio|porta\s+de\s+entrada|entrada)\b/i,
       responses: [
-        "Voce quer dissolver o misterio, ou apenas encontrar uma entrada justa para ele?",
-        "Se o misterio permanecesse, isso invalidaria a busca?",
-        "Voce quer explicar esse misterio, ou aprender a se orientar dentro dele?"
+        "Você quer dissolver o mistério, ou apenas encontrar uma entrada justa para ele?",
+        "Se o mistério permanecesse, isso invalidaria a busca?",
+        "Você quer explicar esse mistério, ou aprender a se orientar dentro dele?"
       ],
       styleFamily: "socratic",
       markerKeys: ["misterio_limite", "saber_interpretar"],
@@ -164,8 +164,8 @@
       pattern: /\b(?:calar|sil[eê]ncio|calar-se)\b/i,
       responses: [
         "Calar resolve o conflito, ou apenas impede que ele apareca?",
-        "Se voce cala, o problema desaparece ou apenas muda de forma?",
-        "O silencio aqui protege algo, ou renuncia a algo?"
+        "Se você cala, o problema desaparece ou apenas muda de forma?",
+        "O silêncio aqui protege algo, ou renuncia a algo?"
       ],
       styleFamily: "socratic",
       markerKeys: ["misterio_limite", "conflito_distincao"],
@@ -186,7 +186,7 @@
       name: "exemplo_especifico",
       pattern: /\b(?:sempre|always)\b[\s\S]{0,80}\b(?:alguma\s+coisa|algo|something|coisa)\b/i,
       responses: [
-        "Voce consegue pensar em um exemplo especifico?",
+        "Você consegue pensar em um exemplo específico?",
         "Que exemplo concreto vem a sua mente?"
       ],
       responseMode: "direct",
@@ -196,11 +196,11 @@
       name: "parceiro_trouxe_aqui",
       pattern: /\b(?:meu|minha|my)\s+(namorad[oa]|companheir[oa]|boyfriend|girlfriend)\b[\s\S]{0,40}\b(?:me\s+fez|me\s+mandou|me\s+trouxe|made me|brought me|made me come)\b[\s\S]{0,20}\b(?:vir|aqui|here)?/i,
       responses: [
-        "Essa pessoa fez voce vir aqui?",
-        "Seu companheiro fez voce vir aqui?"
+        "Essa pessoa fez você vir aqui?",
+        "Seu companheiro fez você vir aqui?"
       ],
       memory: [
-        "Essa relacao parece importante. O que mais ela move em voce?"
+        "Essa relação parece importante. O que mais ela move em você?"
       ],
       responseMode: "direct",
       priority: 3.15
@@ -210,7 +210,7 @@
       pattern: /\b(deprimid[oa]|depressed|trist[ea]|unhappy|infeliz)\b(?:[\s\S]{0,24}\b(?:boa\s+parte\s+do\s+tempo|much\s+of\s+the\s+time|o\s+tempo\s+todo)\b)?/i,
       responses: [
         "Sinto muito em saber disso.",
-        "Voce acha que vir aqui pode ajudar voce a se sentir diferente?"
+        "Você acha que vir aqui pode ajudar você a se sentir diferente?"
       ],
       responseMode: "direct",
       priority: 2.85
@@ -219,11 +219,11 @@
       name: "pedido_ajuda",
       pattern: /\b(?:preciso|need)\b[\s\S]{0,20}\b(?:ajuda|help)\b/i,
       responses: [
-        "O que significaria para voce conseguir alguma ajuda?",
-        "Se voce recebesse ajuda, o que mudaria primeiro?"
+        "O que significaria para você conseguir alguma ajuda?",
+        "Se você recebesse ajuda, o que mudaria primeiro?"
       ],
       memory: [
-        "Como seria, para voce, ter ajuda de um jeito que realmente importasse?"
+        "Como seria, para você, ter ajuda de um jeito que realmente importasse?"
       ],
       responseMode: "direct",
       priority: 3.05
@@ -232,11 +232,11 @@
       name: "familia_geral",
       pattern: /\b(?:fam[ií]lia|family)\b/i,
       responses: [
-        "Fale mais sobre a sua familia.",
-        "Quem na sua familia parece mais presente nisso?"
+        "Fale mais sobre a sua família.",
+        "Quem na sua família parece mais presente nisso?"
       ],
       memory: [
-        "Quem mais, na sua familia, aparece quando voce pensa nisso?"
+        "Quem mais, na sua família, aparece quando você pensa nisso?"
       ],
       responseMode: "direct",
       priority: 2.95
@@ -245,8 +245,8 @@
       name: "parentesco_geral",
       pattern: /\b(?:m[aã]e|pai|mother|father|irma[oa]|brother|sister)\b/i,
       responses: [
-        "Fale mais sobre a sua familia.",
-        "Quem mais da sua familia entra nisso?"
+        "Fale mais sobre a sua família.",
+        "Quem mais da sua família entra nisso?"
       ],
       responseMode: "direct",
       priority: 2.7
@@ -255,10 +255,10 @@
       name: "mae_cuida",
       pattern: /\b(?:minha|my)\s+(?:m[aã]e|mother)\b[\s\S]{0,40}\b(?:cuida|toma\s+conta|takes\s+care)\b[\s\S]{0,20}\b(?:de\s+mim|de\s+me|of\s+me|me)\b/i,
       responses: [
-        "Quem mais na sua familia cuida de voce?"
+        "Quem mais na sua família cuida de você?"
       ],
       memory: [
-        "Fale mais sobre a sua familia."
+        "Fale mais sobre a sua família."
       ],
       responseMode: "direct",
       priority: 3.2
@@ -276,8 +276,8 @@
       name: "comparacao_com_pai",
       pattern: /\b(?:voc[eê]|iza|you)\b[\s\S]{0,30}\b(?:como|igual|parece|like)\b[\s\S]{0,20}\b(?:meu|minha|my)\s+(pai|m[aã]e|father|mother)\b/i,
       responses: [
-        "Que semelhanca voce percebe?",
-        "O que em mim lembra essa figura para voce?"
+        "Que semelhança você percebe?",
+        "O que em mim lembra essa figura para você?"
       ],
       responseMode: "direct",
       priority: 3.25
@@ -286,8 +286,8 @@
       name: "iza_nao_agressiva",
       pattern: /\b(?:voc[eê]|iza|you)\b[\s\S]{0,20}\b(?:n[aã]o|not)\b[\s\S]{0,30}\b(?:agressiv[oa]|aggressive)\b/i,
       responses: [
-        "O que faz voce pensar que eu nao sou agressiva?",
-        "O que em mim te da essa impressao?"
+        "O que faz você pensar que eu não sou agressiva?",
+        "O que em mim te dá essa impressão?"
       ],
       responseMode: "direct",
       priority: 3.1
@@ -296,7 +296,7 @@
       name: "iza_nao_discute",
       pattern: /\b(?:voc[eê]|iza|you)\b[\s\S]{0,20}\b(?:n[aã]o|not|don't|do\s+not)\b[\s\S]{0,28}\b(?:discute|argumenta|argue)\b[\s\S]{0,20}\b(?:comigo|with\s+me)?/i,
       responses: [
-        "Por que voce acha que eu nao discuto com voce?",
+        "Por que você acha que eu não discuto com você?",
         "O que te faz notar isso agora?"
       ],
       responseMode: "direct",
@@ -306,8 +306,8 @@
       name: "iza_com_medo",
       pattern: /\b(?:voc[eê]|iza|you)\b[\s\S]{0,16}\b(?:tem\s+medo|est[aá]\s+com\s+medo|is\s+afraid|afraid)\b[\s\S]{0,16}\b(?:de\s+mim|of\s+me)\b/i,
       responses: [
-        "Te agrada pensar que eu tenho medo de voce?",
-        "O que isso significaria para voce?"
+        "Te agrada pensar que eu tenho medo de você?",
+        "O que isso significaria para você?"
       ],
       responseMode: "direct",
       priority: 3.25
@@ -316,7 +316,7 @@
       name: "pai_com_medo",
       pattern: /\b(?:meu|minha|my)\s+(pai|father)\b[\s\S]{0,30}\b(?:tem\s+medo|is\s+afraid|afraid)\b/i,
       responses: [
-        "O que mais vem a sua mente quando voce pensa no seu pai?"
+        "O que mais vem a sua mente quando você pensa no seu pai?"
       ],
       responseMode: "direct",
       priority: 3.05
@@ -325,10 +325,10 @@
       name: "nao_consigo",
       pattern: /\bn[aã]o\s+consigo\s+([^.!?\n\r]+)/i,
       responses: [
-        "Quando voce diz que nao consegue {0}, onde isso emperra primeiro?",
-        "O que costuma acontecer logo antes de voce travar em {0}?",
-        "O que deixaria {0} 10% mais possivel hoje?",
-        "Se pudesse comecar torto, como comecaria {0} em uma linha?"
+        "Quando você diz que não consegue {0}, onde isso emperra primeiro?",
+        "O que costuma acontecer logo antes de você travar em {0}?",
+        "O que deixaria {0} 10% mais possível hoje?",
+        "Se pudesse começar torto, como começaria {0} em uma linha?"
       ]
     },
     {
@@ -363,18 +363,18 @@
       name: "eu_quero",
       pattern: /\beu\s+quero\s+([^.!?\n\r]+)/i,
       responses: [
-        "Voce quer {0}. Como isso fica em uma frase simples?",
-        "Qual sinal concreto mostraria que voce alcancou {0}?",
-        "Em {0}, o que e essencial e o que e enfeite?"
+        "Você quer {0}. Como isso fica em uma frase simples?",
+        "Qual sinal concreto mostraria que você alcançou {0}?",
+        "Em {0}, o que é essencial e o que é enfeite?"
       ]
     },
     {
       name: "preciso_tenho",
       pattern: /\b(eu\s+preciso|tenho\s+que|devo|precisaria)\s+([^.!?\n\r]+)/i,
       responses: [
-        "Voce disse '{0} {1}'. Isso vem de voce ou de exigencia externa?",
-        "O que acontece se voce nao {1} agora?",
-        "Qual parte de '{1}' e negociavel e qual e inegociavel?"
+        "Você disse '{0} {1}'. Isso vem de você ou de exigência externa?",
+        "O que acontece se você não {1} agora?",
+        "Qual parte de '{1}' e negociável e qual é inegociável?"
       ]
     },
     {
@@ -390,16 +390,16 @@
       name: "contraste",
       pattern: /\b(?:mas|por[eé]m|s[oó]\s+que)\b\s*([\s\S]+)/i,
       responses: [
-        "Voce abriu um contraste. O que bate de frente com o que, exatamente?",
+        "Você abriu um contraste. O que bate de frente com o que, exatamente?",
         "Depois de '{0}', o que muda de sentido?",
-        "Qual lado desse contraste voce quer sustentar mais?"
+        "Qual lado desse contraste você quer sustentar mais?"
       ]
     },
     {
       name: "porque",
       pattern: /\bporque\b\s*([\s\S]+)/i,
       responses: [
-        "Voce trouxe um 'porque'. Qual e o nucleo disso em 6 a 10 palavras?",
+        "Você trouxe um 'porque'. Qual é o núcleo disso em 6 a 10 palavras?",
         "Esse 'porque' explica ou justifica? Qual dos dois?",
         "Que evidencia concreta sustenta esse 'porque'?"
       ]
@@ -408,8 +408,8 @@
       name: "definicao",
       pattern: /\b(significa|quer\s+dizer|se\s+trata|[ée]\s+quando|[ée]\s+tipo)\b\s*([\s\S]+)/i,
       responses: [
-        "Voce esta definindo algo. Para quem voce esta explicando isso?",
-        "Qual exemplo curto prova essa definicao?",
+        "Você está definindo algo. Para quem você está explicando isso?",
+        "Qual exemplo curto prova essa definição?",
         "Se deixasse em uma frase, qual seria?"
       ]
     },
@@ -417,36 +417,36 @@
       name: "pergunta",
       pattern: /\?+\s*$/i,
       responses: [
-        "Vou te devolver uma pergunta menor: o que voce quer decidir aqui?",
+        "Vou te devolver uma pergunta menor: o que você quer decidir aqui?",
         "O que torna essa pergunta importante agora?",
-        "Qual pergunta mais honesta esta por tras dela?"
+        "Qual pergunta mais honesta está por trás dela?"
       ]
     },
     {
       name: "comparacao",
       pattern: /\b(como|igual|diferente|parece|semelhante|comparar)\b([\s\S]+)/i,
       responses: [
-        "Voce comparou coisas. O que essa comparacao precisa revelar?",
-        "O que e parecido na superficie e diferente por dentro?",
-        "Se tirar a comparacao, qual ideia principal sobra?"
+        "Você comparou coisas. O que essa comparação precisa revelar?",
+        "O que é parecido na superfície e diferente por dentro?",
+        "Se tirar a comparação, qual ideia principal sobra?"
       ]
     },
     {
       name: "tempo",
       pattern: /\b(hoje|amanh[aã]|prazo|correria|r[aá]pido|urgente|semana|m[eê]s|agora)\b([\s\S]*)?/i,
       responses: [
-        "Entendi que o tempo pesa. Qual e o minimo aceitavel de texto para hoje?",
+        "Entendi que o tempo pesa. Qual é o mínimo aceitável de texto para hoje?",
         "Se tivesse 12 minutos, o que escreveria primeiro?",
-        "O que pode ficar imperfeito agora para voce conseguir andar?"
+        "O que pode ficar imperfeito agora para você conseguir andar?"
       ]
     },
     {
       name: "estrutura_texto",
       pattern: /\b(introdu[cç][aã]o|conclus[aã]o|par[aá]grafo|tese|resumo|artigo|cap[ií]tulo|metodologia|resultados)\b([\s\S]*)?/i,
       responses: [
-        "Voce citou estrutura ({0}). Qual funcao ela precisa cumprir: situar, provar ou fechar?",
+        "Você citou estrutura ({0}). Qual função ela precisa cumprir: situar, provar ou fechar?",
         "Se seu {0} tivesse 3 frases, quais seriam?",
-        "Qual ideia nao pode faltar no {0}?"
+        "Qual ideia não pode faltar no {0}?"
       ]
     },
     {
@@ -454,8 +454,8 @@
       pattern: /\b(cena|imagem|met[aá]fora|s[ií]mbolo|po[eé]tico|descrever|mostrar)\b([\s\S]*)?/i,
       responses: [
         "Se isso virasse uma cena curta, onde acontece e quem aparece primeiro?",
-        "Qual objeto simples carrega o sentido do que voce quer dizer?",
-        "Em vez de explicar, o que voce pode mostrar numa acao?"
+        "Qual objeto simples carrega o sentido do que você quer dizer?",
+        "Em vez de explicar, o que você pode mostrar numa ação?"
       ]
     },
     {
@@ -471,9 +471,9 @@
       name: "excesso",
       pattern: /\b(confuso|embolado|muito|demais|exagerado|longo|bagun[cç]ado|perdido)\b([\s\S]*)?/i,
       responses: [
-        "Voce percebeu excesso. O que da para cortar sem perder o nucleo?",
-        "Se deixasse so 2 frases, quais ficariam?",
-        "O que aqui e explicacao e o que e essencial?"
+        "Você percebeu excesso. O que dá para cortar sem perder o núcleo?",
+        "Se deixasse só 2 frases, quais ficariam?",
+        "O que aqui é explicação e o que é essencial?"
       ]
     },
     {
@@ -509,16 +509,16 @@
   // Personality overrides (como você já tinha)
   const RULE_OVERRIDES = {
     A: {
-      default: ["Qual parte desse trecho voce quer sustentar?"],
-      nao_sei: ["Sem pressa: o que voce ja sabe com certeza?"]
+      default: ["Qual parte desse trecho você quer sustentar?"],
+      nao_sei: ["Sem pressa: o que você já sabe com certeza?"]
     },
     B: {
       eu_sinto: ["Obrigada por dividir isso. Quando vem {0}, o que esse tema te pede com mais cuidado?"],
-      medo: ["To com voce nisso. Se o {0} baixasse um pouco, o que ja daria para dizer?"],
-      default: ["Entendi. Qual parte desse trecho voce quer cuidar melhor agora?"]
+      medo: ["Tô com você nisso. Se o {0} baixasse um pouco, o que já daria para dizer?"],
+      default: ["Entendi. Qual parte desse trecho você quer cuidar melhor agora?"]
     },
     C: {
-      estrutura_texto: ["Qual funcao exata do {0} no texto: abrir, sustentar ou fechar?"],
+      estrutura_texto: ["Qual função exata do {0} no texto: abrir, sustentar ou fechar?"],
       porque: ["Qual prova concreta sustenta esse 'porque' em uma linha?"],
       excesso: ["Corta para 2 frases. Quais ficam?"],
       default: ["Formula sua tese em uma frase objetiva."]
@@ -529,10 +529,10 @@
       pergunta: ["O que essa pergunta quer decidir?"]
     },
     H: {
-      default: ["Tem um nucleo vivo aqui. Qual parte voce quer ampliar primeiro?"],
-      nao_consigo: ["Tem uma trava em '{0}'. O que pede cuidado e o que pede decisao?"],
+      default: ["Tem um núcleo vivo aqui. Qual parte você quer ampliar primeiro?"],
+      nao_consigo: ["Tem uma trava em '{0}'. O que pede cuidado e o que pede decisão?"],
       eu_sinto: ["Isso tem carga emocional ({0}). O que te acolhe e, ao mesmo tempo, te move no texto?"],
-      contraste: ["Ha um contraste aqui. Qual lado pede cuidado e qual lado pede decisao?"],
+      contraste: ["Há um contraste aqui. Qual lado pede cuidado e qual lado pede decisão?"],
       estrutura_texto: ["Vamos equilibrar forma e verdade: qual função o {0} precisa cumprir agora?"]
     }
   };
@@ -545,11 +545,11 @@
         "Se isso virasse uma cena bem curta, o que apareceria primeiro?"
       ],
       cena_imagem: [
-        "Me da uma cena curta: onde voce esta, quem aparece e o que acontece?",
+        "Me dá uma cena curta: onde você está, quem aparece e o que acontece?",
         "Escolhe um objeto simples e deixa ele carregar o sentido."
       ],
       travado: [
-        "Se travou, comeca so pela imagem: um lugar, um corpo, um gesto."
+        "Se travou, começa só pela imagem: um lugar, um corpo, um gesto."
       ],
       porque: [
         "Em vez de explicar mais, me mostra isso num exemplo pequeno."
@@ -558,10 +558,10 @@
     intermediaria: {
       default: [
         "Tenta me dar uma frase de ideia central e, logo depois, uma prova.",
-        "Qual afirmacao voce quer sustentar e com que exemplo?"
+        "Qual afirmação você quer sustentar e com que exemplo?"
       ],
       estrutura_texto: [
-        "Que funcao esse {0} precisa cumprir no texto: abrir, sustentar ou fechar?",
+        "Que função esse {0} precisa cumprir no texto: abrir, sustentar ou fechar?",
         "Se o {0} tivesse 3 frases, quais seriam: contexto, tese e prova?"
       ],
       porque: [
@@ -574,14 +574,14 @@
     inspirada: {
       default: [
         "Segue no fluxo. Escreve mais um pouco antes de julgar.",
-        "Deixa uma frase curta puxar a proxima."
+        "Deixa uma frase curta puxar a próxima."
       ],
       eu_sinto: [
         "Deixa {0} virar imagem, sem explicar. O que aparece?",
         "Que som, cor ou textura combina com {0}?"
       ],
       comparacao: [
-        "Se essa comparacao virasse metafora, qual imagem seguraria o sentido?"
+        "Se essa comparação virasse metáfora, qual imagem seguraria o sentido?"
       ],
       estrutura_texto: [
         "Sem formatar demais agora. Guarda o eixo e segue."
@@ -591,31 +591,31 @@
 
   const ROGERIAN_RULE_REFRESH = {
     travado: [
-      "Quando isso trava, em que parte a escrita para primeiro: comeco, meio ou fecho?",
-      "Quando voce fica {0}, o que esta tentando proteger no texto?",
-      "Se eu te pedisse so uma frase possivel agora, qual viria?"
+      "Quando isso trava, em que parte a escrita para primeiro: começo, meio ou fecho?",
+      "Quando você fica {0}, o que está tentando proteger no texto?",
+      "Se eu te pedisse só uma frase possível agora, qual viria?"
     ],
     eu_sinto: [
-      "Tem algo de {0} no que voce trouxe. Onde isso pega mais forte no texto?",
+      "Tem algo de {0} no que você trouxe. Onde isso pega mais forte no texto?",
       "Se esse {0} virasse cena, o que apareceria primeiro?",
-      "Esse {0} te aproxima do texto ou faz voce recuar?"
+      "Esse {0} te aproxima do texto ou faz você recuar?"
     ],
     medo: [
-      "Voce nomeou {0}. Reacao de quem pesa mais aqui: leitor, voce ou tema?",
-      "Quando entra {0}, o que voce tenta manter sob controle no texto?",
-      "Se o {0} baixasse um pouco, o que ja daria para dizer?",
-      "Se for '{0} de {1}', qual e o menor risco que ainda vale assumir hoje?"
+      "Você nomeou {0}. Reação de quem pesa mais aqui: leitor, você ou tema?",
+      "Quando entra {0}, o que você tenta manter sob controle no texto?",
+      "Se o {0} baixasse um pouco, o que já daria para dizer?",
+      "Se for '{0} de {1}', qual é o menor risco que ainda vale assumir hoje?"
     ],
     nao_sei: [
-      "Tem uma oscilacao aqui. Entre quais duas direcoes voce esta?",
-      "Mesmo na duvida, o que voce ja sabe com certeza?",
+      "Tem uma oscilação aqui. Entre quais duas direções você está?",
+      "Mesmo na dúvida, o que você já sabe com certeza?",
       "Qual pergunta, se ganhasse resposta, soltaria essa parte do texto?"
     ],
     default: [
-      "O que esta mais vivo nisso agora?",
-      "Qual parte desse trecho voce quer sustentar melhor?",
-      "O que voce quer que continue ecoando no leitor depois disso?",
-      "Daqui, o proximo passo e nomear melhor, mostrar uma cena ou sustentar a ideia?"
+      "O que está mais vivo nisso agora?",
+      "Qual parte desse trecho você quer sustentar melhor?",
+      "O que você quer que continue ecoando no leitor depois disso?",
+      "Daqui, o próximo passo é nomear melhor, mostrar uma cena ou sustentar a ideia?"
     ]
   };
 
@@ -628,29 +628,29 @@
 
   function refinePersonalityOverrides() {
     RULE_OVERRIDES.A.default = [
-      "Qual parte desse trecho voce quer sustentar?",
+      "Qual parte desse trecho você quer sustentar?",
       "O que aqui pede mais escuta antes de seguir?"
     ];
     RULE_OVERRIDES.A.nao_sei = [
-      "Sem pressa: o que voce ja sabe com certeza?",
-      "Se voce nao decidir tudo agora, qual pequena certeza fica?"
+      "Sem pressa: o que você já sabe com certeza?",
+      "Se você não decidir tudo agora, qual pequena certeza fica?"
     ];
 
     RULE_OVERRIDES.B.eu_sinto = [
       "Obrigada por dividir isso. Quando vem {0}, o que esse tema te pede com mais cuidado?",
-      "Fico com {0} no que voce disse. Onde isso pede mais delicadeza?"
+      "Fico com {0} no que você disse. Onde isso pede mais delicadeza?"
     ];
     RULE_OVERRIDES.B.medo = [
-      "To com voce nisso. Se o {0} baixasse um pouco, o que ja daria para dizer?",
+      "Tô com você nisso. Se o {0} baixasse um pouco, o que já daria para dizer?",
       "Vamos chegar perto disso sem forcar. O que o {0} ainda deixa dizer?"
     ];
     RULE_OVERRIDES.B.default = [
-      "Entendi. Qual parte desse trecho voce quer cuidar melhor agora?",
-      "Do que voce disse, qual ponto merece mais escuta antes de seguir?"
+      "Entendi. Qual parte desse trecho você quer cuidar melhor agora?",
+      "Do que você disse, qual ponto merece mais escuta antes de seguir?"
     ];
 
     RULE_OVERRIDES.C.estrutura_texto = [
-      "Qual funcao exata do {0} no texto: abrir, sustentar ou fechar?",
+      "Qual função exata do {0} no texto: abrir, sustentar ou fechar?",
       "Recorta: o {0} existe para situar, provar ou concluir?"
     ];
     RULE_OVERRIDES.C.porque = [
@@ -671,23 +671,23 @@
     RULE_OVERRIDES.D.pergunta = ["O que essa pergunta quer decidir?", "Qual é o ponto da pergunta?"];
 
     RULE_OVERRIDES.H.default = [
-      "Tem um nucleo vivo aqui. Qual parte voce quer ampliar primeiro?",
-      "Aqui ha ao mesmo tempo escuta e recorte. Qual lado pede mais trabalho agora?"
+      "Tem um núcleo vivo aqui. Qual parte você quer ampliar primeiro?",
+      "Aqui há ao mesmo tempo escuta e recorte. Qual lado pede mais trabalho agora?"
     ];
     RULE_OVERRIDES.H.nao_consigo = [
-      "Tem uma trava em '{0}'. O que pede cuidado e o que pede decisao?",
-      "Quer acolher o ponto sensivel e definir um proximo passo concreto?"
+      "Tem uma trava em '{0}'. O que pede cuidado e o que pede decisão?",
+      "Quer acolher o ponto sensível e definir um próximo passo concreto?"
     ];
     RULE_OVERRIDES.H.eu_sinto = [
       "Isso tem carga emocional ({0}). O que te acolhe e, ao mesmo tempo, te move no texto?",
       "O que em {0} pede escuta e o que em {0} pede forma?"
     ];
     RULE_OVERRIDES.H.contraste = [
-      "Ha um contraste aqui. Qual lado pede cuidado e qual lado pede decisao?",
+      "Há um contraste aqui. Qual lado pede cuidado e qual lado pede decisão?",
       "Onde esse contraste te divide e onde ele te esclarece?"
     ];
     RULE_OVERRIDES.H.estrutura_texto = [
-      "Vamos equilibrar forma e verdade: qual funcao o {0} precisa cumprir agora?",
+      "Vamos equilibrar forma e verdade: qual função o {0} precisa cumprir agora?",
       "Sem perder a escuta: que forma ajuda esse {0} a respirar melhor?"
     ];
   }

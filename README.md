@@ -1,102 +1,188 @@
-# IZA no Cordel 2.0
+# IZA no Cordel 0.2
 
-Aplicacao web de escrita guiada e reflexao textual com identidade visual inspirada em cordel, xilogravura digital e cultura popular brasileira.
+Aplicação de escrita guiada em Cordel 2.0, com frontend estático em HTML/CSS/JavaScript puro e backend em Google Apps Script. A versão local `iza0.2-main` já combina validação de check-in por e-mail, definição de presença conversacional, trilhas de escrita, síntese final e busca de presente literário em base poética.
 
-A IZA atua como mediadora de escrita: acompanha o participante, devolve perguntas, ajuda a aprofundar o texto e encerra a jornada com sintese, registro e um presente literario.
+## Resumo técnico
 
-## Visao geral
-
-O projeto combina:
-
-- interface web em HTML, CSS e JavaScript puro
-- fluxo conversacional com diferentes presencas da IZA
-- registro da jornada em Google Sheets via Google Apps Script
-- fechamento com sintese, palavras-chave e presente literario
-- envio opcional de e-mail sem bloquear a experiencia
-
-O foco nao e competicao nem pontuacao. A proposta e levar o participante a pensar melhor o proprio texto.
-
-## Principais recursos
-
-- tres trilhas de escrita
-- diferentes presencas da IZA
-- visual inspirado no universo Cordel 2.0
-- registro em planilha de:
-  - dados iniciais
-  - trilha escolhida
-  - transcript final
-  - sintese da jornada
-  - palavras-chave
-  - presente literario
-- envio opcional de e-mail no encerramento
-- busca de presente literario em base de poemas
-- fallback poetico da IZA quando nao ha associacao forte o bastante
-- rubricas e checklist internos para analise de testes, sem exibicao ao participante
+- Frontend sem build step: `index.html`, `style.css`, `app.js`, `rules.js`.
+- Backend publicado como Web App em `Code.gs`.
+- Estado salvo em `localStorage` com a chave `izaState`.
+- Registro de jornada dividido em quatro momentos lógicos:
+  - `init`
+  - `choice`
+  - `final`
+  - `final_gift`
+- Integração de check-in via JSONP (`action=checkin_lookup`).
+- Integração de presente literário via `google.script.run` quando o app roda dentro do Apps Script, com fallback para JSONP/HTTP quando roda como página estática.
 
 ## Estrutura do projeto
 
-- `index.html`: shell da aplicacao
-- `style.css`: design system e identidade visual
-- `app.js`: fluxo do app, trilhas, interface e integracao com o Web App
-- `Code.gs`: backend em Google Apps Script
-- `rules.js`: regras auxiliares do app
-- `logo_cordel_color.png`: identidade visual principal
-- `IZA_Poems_Base.xlsx`: base local de apoio
+- `index.html`: shell da experiência.
+- `style.css`: identidade visual e componentes.
+- `app.js`: máquina de estados da jornada, UI, validações, resumo final e chamadas ao backend.
+- `rules.js`: base de regras conversacionais, marcadores socráticos e overrides por presença/trilha.
+- `Code.gs`: persistência, lookup de check-in, lookup de presente literário e e-mail final.
+- `ION_Plato.csv` / `ION_Plato_ptBR.csv`: insumos textuais de apoio.
+- `IZA_Poems_Base.xlsx`: base local de referência para a planilha poética.
 
-## Como funciona
+## Fluxo da experiência
 
-### Front-end
+1. A pessoa informa o e-mail e precisa validar identidade pelo endpoint de check-in.
+2. O backend devolve `name`, `municipio`, `estado`, `origem`, `teacherGroup`, `participantId` e `checkinUserId`.
+3. A pessoa escolhe uma presença fixa da IZA ou responde um teste de 5 perguntas para gerar uma presença híbrida.
+4. A pessoa escolhe uma trilha:
+   - `iniciante`: 4 passos.
+   - `intermediaria`: 7 passos.
+   - `inspirada`: conversa aberta com mínimo de 7 rodadas antes do encerramento.
+5. Cada resposta passa por validação de passo e pelo motor de regras em `rules.js`.
+6. No fechamento, o app gera:
+   - síntese da jornada;
+   - palavras-chave;
+   - transcript final;
+   - presente literário;
+   - texto final em bloco próprio, quando houver.
+7. O backend registra a jornada e pode enviar o fechamento por e-mail.
 
-O participante:
+## Frontend em detalhe
 
-1. informa os dados iniciais
-2. escolhe presenca e trilha
-3. percorre a jornada textual com a IZA
-4. recebe um fechamento com:
-   - sintese da jornada
-   - palavras-chave
-   - presente literario
-   - registro completo exportavel
+### Constantes importantes
 
-### Back-end
+- `WEBAPP_URL`: URL do Web App publicado.
+- `APP_VARIANT`: `iza0.2`.
+- `MIN_INSPIRED_ROUNDS`: `7`.
+- `GIFT_LOOKUP_TIMEOUT_MS`: `45000`.
 
-O Apps Script:
+### Estado local
 
-- registra dados na planilha de participantes
-- busca poemas na base conectada
-- ranqueia associacoes lexicais
-- devolve um poema, um poema associado ou uma bencao da IZA
-- tenta enviar e-mail sem bloquear a experiencia
-- envia por e-mail a sintese, o presente literario, o texto sugerido para compartilhar e o registro completo
-- nao envia card social em SVG no e-mail por enquanto
+O objeto `state` em `app.js` concentra:
 
-## Integracao com Google Apps Script
+- identidade resolvida pelo check-in;
+- presença atual (`A`, `B`, `C`, `D` ou `H`);
+- `presenceMix` quando a presença é híbrida;
+- trilha ativa e índice do passo;
+- turns completos da conversa;
+- resumo final, checklist e rubrica;
+- flags de envio e registro;
+- histórico de telas para navegação de revisão.
 
-O arquivo `Code.gs` deve ser publicado como Web App.
+### Presenças da IZA
 
-O front envia dados para a URL definida em `app.js`.
+O frontend trabalha com quatro presenças fixas e uma combinação híbrida:
 
-Quando o front roda dentro do proprio Apps Script, a busca do presente literario prioriza `google.script.run`. Em uso estatico, o app recorre ao endpoint publicado do Web App.
+- `A`: discreta.
+- `B`: calorosa.
+- `C`: firme.
+- `D`: minimalista.
+- `H`: híbrida, calculada pelo teste de 5 perguntas.
 
-### Planilhas
+Cada presença altera:
 
-O projeto usa duas bases:
+- abertura de resposta;
+- espelhamento;
+- fechamento;
+- peso das regras;
+- tom de perguntas e intervenções.
 
-- planilha de registro dos participantes
-- planilha da base de poemas
+### Trilhas
 
-O Apps Script aceita configuracao por `Script Properties`:
+- `iniciante`: núcleo -> centro -> tipo de centro -> atrito -> cena -> frase final.
+- `intermediaria`: tema -> centro -> tipo de centro -> atrito -> concreto -> contraste -> síntese -> forma final.
+- `inspirada`: abertura -> centro -> tipo de centro -> loop.
+
+Na trilha `inspirada`, o comando de encerramento só é aceito depois de 7 rodadas.
+
+### Motor de regras
+
+`rules.js` expõe:
+
+- `window.IZA_RULES`
+- `window.getIZARulesFor(presenceKey, presenceMix)`
+
+O arquivo inclui:
+
+- regras socráticas;
+- memória curta por regra;
+- marcadores temáticos inspirados em `ION`;
+- pesos por presença;
+- pesos por trilha/etapa.
+
+### Persistência e UX
+
+- Salvamento automático em `localStorage`.
+- Retomada de sessão interrompida.
+- Histórico de telas com navegação apenas para revisão, sem reabrir edição do texto.
+- Exportação do transcript final em `.txt`.
+
+## Backend em detalhe
+
+### Endpoints
+
+`Code.gs` expõe:
+
+- `GET ?action=gift`
+- `GET ?action=checkin_lookup`
+- `POST` com payload JSON para `init`, `choice`, `final` e `final_gift`
+- `lookupLiteraryGift(payload)` para uso por `google.script.run`
+
+### Script Properties aceitas
 
 - `IZA_RECORDS_SPREADSHEET_ID`
 - `IZA_RECORDS_SHEET_NAME`
+- `IZA_CHECKIN_SPREADSHEET_ID`
+- `IZA_CHECKIN_SHEET_NAME`
 - `IZA_POEMS_SPREADSHEET_ID`
 - `IZA_POEMS_SHEET_NAME`
+- `IZA_DEBUG_CHECKIN_EMAIL`
 
-Se essas propriedades nao forem definidas, o script usa os fallbacks configurados no proprio `Code.gs`.
+Se essas propriedades não forem definidas, o script usa os fallbacks hardcoded no próprio `Code.gs`.
 
-## Base de poemas
+### Registro principal
 
-Para melhorar a busca do presente literario, a aba `POEMS` pode ser indexada com colunas auxiliares:
+A linha principal de registro usa cabeçalhos como:
+
+- `DATA/HORA`
+- `APP_VARIANT`
+- `SESSION_ID`
+- `PARTICIPANT_ID`
+- `CHECKIN_USER_ID`
+- `CHECKIN_MATCH_STATUS`
+- `CHECKIN_MATCH_METHOD`
+- `ESCRITOR/A`
+- `EMAIL`
+- `MUNICIPIO`
+- `ESTADO`
+- `ORIGEM`
+- `TEACHER_GROUP`
+- `TRILHA`
+- `PERSONALIDADE DO BOT`
+- `REGISTRO DOS ESCRITOS`
+- `SINTESE DA JORNADA`
+- `PALAVRAS-CHAVE`
+- `PRESENTE LITERARIO`
+- `CREDITO DO PRESENTE`
+- `LOG FECHAMENTO`
+
+### Check-in
+
+O lookup de check-in tenta casar registros por:
+
+1. e-mail
+2. nome + turma/coorte
+3. nome + municipio
+
+O retorno inclui `participantId` estável, gerado a partir do check-in ou de identidade normalizada.
+
+### Presente literário
+
+O motor poético:
+
+- normaliza keywords e resumo da jornada;
+- divide a base de poemas em 5 shards rotativos;
+- indexa e pontua poemas por interseção lexical e temas;
+- escolhe excerto;
+- cai para um fallback poético quando não acha correspondência suficiente.
+
+Colunas auxiliares esperadas na aba `POEMS`:
 
 - `NORM_TITLE`
 - `NORM_CONTENT`
@@ -105,58 +191,36 @@ Para melhorar a busca do presente literario, a aba `POEMS` pode ser indexada com
 - `ADJECTIVES`
 - `BIGRAMS`
 - `ALL_TOKENS`
+- `THEMES`
 
-Apos atualizar a base, execute manualmente no Apps Script:
+Para recalcular essas colunas:
 
 ```javascript
 syncPoemsAnnotations_()
 ```
 
-Isso recalcula a indexacao usada pelo motor de associacao poetica.
+### E-mail final
 
-## Como rodar localmente
+No estágio `final_gift`, o backend pode enviar:
 
-Como o front e estatico, voce pode:
+- síntese da jornada;
+- palavras-chave;
+- presente literário;
+- crédito do presente;
+- sugestão de compartilhamento;
+- transcript completo.
 
-1. abrir `index.html` no navegador
-2. ou servir a pasta com um servidor estatico simples
+O envio usa `GmailApp.sendEmail`. O fluxo não trava a experiência se o envio falhar.
 
-Se quiser testar o registro e o presente literario, o Web App do Apps Script precisa estar publicado e acessivel.
+## Deploy e operação
 
-Sempre que `Code.gs` for alterado, publique uma nova versao do Web App para colocar as mudancas em producao.
+1. Atualize `Code.gs` no projeto Apps Script.
+2. Publique uma nova versão do Web App.
+3. Atualize `WEBAPP_URL` em `app.js` se a URL mudar.
+4. Garanta acesso de leitura às planilhas de check-in e poemas.
+5. Rode `syncPoemsAnnotations_()` quando a base poética mudar de estrutura ou conteúdo.
 
-## Fluxo de encerramento
+## Observações
 
-Ao final de cada trilha, o app tenta entregar o presente em tres niveis:
-
-1. `poema direto`
-2. `poema associado`
-3. `bencao de encerramento da IZA`
-
-Isso evita que o fechamento fique seco quando nao ha coincidencia forte o suficiente na base.
-
-O transcript final visivel ao participante inclui a sintese da jornada, as palavras-chave, o presente literario e o registro completo exportavel. A rubrica de teste e a definicao de pronto ficam restritas ao uso interno.
-
-## Estado atual
-
-O projeto ja inclui:
-
-- redesign visual inspirado em Cordel 2.0
-- microcopy revisada
-- fechamento enriquecido
-- registro em planilha
-- exportacao de `.txt`
-- associacao literaria com fallback poetico
-- envio de e-mail com fechamento textual, sem depender de anexo visual
-
-## Proximos aprimoramentos possiveis
-
-- melhorar a associacao entre texto do participante e poemas da base
-- refinar a explicacao do vinculo entre jornada e presente literario
-- fortalecer a curadoria da base poetica
-- lapidar ainda mais o tom das bencaos por trilha e presenca
-- ampliar testes com dialogos reais
-
-## Licenca
-
-Este repositorio inclui um arquivo `LICENSE`.
+- Apesar do nome `0.2`, esta pasta local já incorpora lookup de check-in, resumo final estruturado e presente literário com fallback.
+- O app foi desenhado para rodar sem bundler, sem framework e sem dependência de backend fora do ecossistema Google.
