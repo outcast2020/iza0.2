@@ -3673,12 +3673,12 @@ function renderLiteraryGift(payload) {
   const gift = payload.literaryGift || enrichFallbackLiteraryGift(buildFallbackLiteraryGift(payload.keywords || []), payload);
   const credit = [gift.author, gift.title].filter(Boolean).join(" - ");
   const searchInvitation = buildGiftSearchInvitation(gift);
+  const intro = (gift.intro || renderGiftLead(gift.source) || "").trim();
 
   return `
     <div class="iza-gift">
       <p class="iza-section-title"><strong>Ressonância poética</strong></p>
-      <p class="iza-copy">${escapeHtml(renderGiftLead(gift.source))}</p>
-      <p class="iza-copy iza-copy--soft">${escapeHtml(gift.intro || "")}</p>
+      ${intro ? `<p class="iza-copy iza-copy--soft">${escapeHtml(intro)}</p>` : ""}
       ${cloudHtml}
       ${keywordsHtml}
       <div class="message">${escapeHtml(gift.fragment || "").replace(/\n/g, "<br>")}</div>
